@@ -72,7 +72,7 @@ The top-right icons open keyboard shortcuts, editor logs, settings and update ch
 
 Choose **Export** for a project PDF with a linked index. Right-click a page and choose **Export page as PDF** for that canvas alone. Preview the sheets, fit each canvas on one landscape A4 sheet or tile it at its original scale. Active department filters can optionally be applied.
 
-Choose **Project archive (.zip)** to share an editable project. The archive contains the current project and its adjacent assets directory. Review original file and folder paths, including references in the trash. **Convert to local** copies a reference into the project and saves the updated project. **Convert all to local** collects all listed paths. Extract the ZIP and open the included `.gdstudio` on another computer. Web links keep their URLs. Copied Windows shortcut files keep their original targets.
+Choose **Project archive (.zip)** to share an editable project. The archive contains the current project and its adjacent assets directory. Review original file and folder paths, including references in the trash. **Convert to local** copies a reference into the project and saves the updated project. **Convert all to local** collects all listed paths. Extract the ZIP and open the included project file on another computer. Web links keep their URLs. Copied Windows shortcut files keep their original targets.
 
 ## Release 0.6.0
 
@@ -128,7 +128,7 @@ Select an image, frame, note or shortcut and choose **Link object** in the inspe
 - Choose a light, dark or system theme. Use **Ctrl/Cmd + S** to save a portable local project.
 - Select **Add benchmark page** for a generated board with 100 raster images of different sizes, three notes and a frame. The status bar shows a rolling animation frame rate.
 
-Projects use a versioned JSON document with a `.gdstudio` extension. For projects with copied attachments, move the project file and the matching `.assets` folder together. Linked originals must remain accessible at their original location. Save explicitly before closing.
+Projects use a versioned JSON document with a `.tkv` extension. Existing `.gdstudio` files can still be opened. Launch the Windows portable once to associate `.tkv` files with Tenkivo for your account. Double-clicking a project opens it in a new Tenkivo window. For projects with copied attachments, move the project file and the matching `.assets` folder together. Linked originals must remain accessible at their original location. Save explicitly before closing.
 
 ## Development
 

@@ -14,11 +14,44 @@ fn restart_after_update(app: tauri::AppHandle) {
 
 fn project_file(path: &str) -> Result<&Path, String> {
     let file = Path::new(path);
-    if file.is_absolute() && file.extension().is_some_and(|ext| ext == "gdstudio") {
+    if file.is_absolute() && file.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("tkv") || ext.eq_ignore_ascii_case("gdstudio")) {
         Ok(file)
     } else {
-        Err("Choose a .gdstudio project file.".into())
+        Err("Choose a Tenkivo project file (.tkv or .gdstudio).".into())
     }
+}
+
+#[tauri::command]
+fn startup_project() -> Option<String> {
+    let arg = std::env::args_os().nth(1)?;
+    let path = std::path::absolute(arg).ok()?;
+    let text = path.to_str()?;
+    project_file(text).ok().map(|_| text.to_owned())
+}
+
+#[cfg(windows)]
+fn register_project_files() -> std::io::Result<()> {
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+    use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+    let exe = std::env::current_exe()?;
+    let exe = dunce::simplified(&exe).display();
+    let classes = RegKey::predef(HKEY_CURRENT_USER).create_subkey(r"Software\Classes")?.0;
+    let prog_id = "Tenkivo.Project";
+    let class = classes.create_subkey(prog_id)?.0;
+    let command = class.create_subkey(r"shell\open\command")?.0;
+    let extension = classes.create_subkey(".tkv")?.0;
+    let open_command = format!(r#""{exe}" "%1""#);
+    let current = extension.get_value::<String,_>("");
+    if command.get_value::<String,_>("").ok().as_ref() == Some(&open_command) && current.is_ok() {
+        return Ok(());
+    }
+    class.set_value("", &"Tenkivo Project")?;
+    class.create_subkey("DefaultIcon")?.0.set_value("", &format!(r#""{exe}",0"#))?;
+    command.set_value("", &open_command)?;
+    extension.create_subkey("OpenWithProgids")?.0.set_value(prog_id, &"")?;
+    if current.unwrap_or_default().is_empty() { extension.set_value("", &prog_id)?; }
+    unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None); }
+    Ok(())
 }
 
 #[tauri::command]
@@ -49,9 +82,9 @@ fn create_template(folder: String, document: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     for number in 1.. {
         let name = if number == 1 {
-            "Template Project.gdstudio".into()
+            "Template Project.tkv".into()
         } else {
-            format!("Template Project ({number}).gdstudio")
+            format!("Template Project ({number}).tkv")
         };
         let path = folder.join(name);
         match draft.persist_noclobber(&path) {
@@ -108,10 +141,19 @@ fn main() {
     if updates::apply_if_staged() {
         return;
     }
+    #[cfg(windows)]
+    {
+        let register_only = std::env::args_os().nth(1).is_some_and(|arg| arg == "--register-project-files");
+        if register_only || !cfg!(debug_assertions) {
+            let result = register_project_files();
+            if register_only { std::process::exit(if result.is_ok() { 0 } else { 1 }); }
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             open_project,
+            startup_project,
             project_availability,
             create_template,
             export::export_zip,

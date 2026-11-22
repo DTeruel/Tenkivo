@@ -466,7 +466,7 @@
       children:(active && active.id===frameOnly?[active]:affected).map(v=>({o:v,box:{...v}}))};
     viewport.setPointerCapture(e.pointerId);
   }
-  const fileFilters = [{name:'Tenkivo',extensions:['gdstudio']}];
+  const fileFilters = [{name:'Tenkivo',extensions:['tkv']}];
   let release=$state<{current:string;version:string;notes:string;portable:boolean}|null>(null);
   let updateDialog:HTMLDialogElement, installing=$state(false), updateError=$state('');
   const updateInterval=60*60*1000;
@@ -923,7 +923,7 @@
         if(!await discard())return;
         const p=page('Overview');
         const next:typeof initial={version:1,users:draftUsers.map(u=>({...u,name:u.name.trim()})),name:draftName.trim(),description:draftDescription.trim(),catalog:draftCatalog.map(d=>({...d,name:d.name.trim()})),pages:[p]};
-        const location=isTauri()?await save({defaultPath:next.name+'.gdstudio',filters:fileFilters}):'';
+        const location=isTauri()?await save({defaultPath:next.name+'.tkv',filters:fileFilters}):'';
         if(location===null)return;
         if(location)await invoke('save_project',{path:location,document:JSON.stringify(next)});
         project=next;path=location;welcome=false;editorId='';editing=false;showFps=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
@@ -946,19 +946,19 @@
   }
   async function openFile(){
     if(!isTauri()){fileInput.click();return;}
-    try{const f=await open({filters:fileFilters});if(f)await load(await invoke('open_project',{path:f}),f);}
+    try{const f=await open({filters:[{name:'Tenkivo projects',extensions:['tkv','gdstudio']}]});if(f)await load(await invoke('open_project',{path:f}),f);}
     catch(e){recordError('Project file',e);status=String(e);if(welcome)welcomeError=status;}
   }
   async function saveFile(){
     if(busy)return;busy=true;
     try{
-      const location=isTauri()?(path || await save({defaultPath:project.name+'.gdstudio',filters:fileFilters})):'';
+      const location=isTauri()?(path || await save({defaultPath:project.name+'.tkv',filters:fileFilters})):'';
       if(isTauri() && !location)return;
       commit();typingField=null;const saving=revisions[revision];
       const pageHistory=checkpointPages();
       const raw=JSON.stringify({...project,pageHistory});
       if(location){await invoke('save_project',{path:location,document:raw});path=location;rememberProject(location);}
-      else{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([raw]));a.href=url;a.download=project.name+'.gdstudio';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+      else{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([raw]));a.href=url;a.download=project.name+'.tkv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
       project.pageHistory=pageHistory;
       savedRevision={...saving,doc:{...saving.doc,pageHistory}};
       if(revisions[revision]===saving)revisions[revision]=savedRevision;
@@ -1071,7 +1071,7 @@
       }else void checkUpdates();
     }).catch(()=>{void checkUpdates();});
     const last=localStorage.getItem('studio-last');
-    if(isTauri() && startup==='last' && last)void openRecent(last);
+    if(isTauri())void invoke<string|null>('startup_project').then(file=>{if(file)void openRecent(file);else if(startup==='last' && last)void openRecent(last);else void checkRecent();}).catch(()=>void checkRecent());
     else void checkRecent();
      let id=0,start=performance.now(),frames=0;
     function frame(t:number){frames++;if(t-start>=750){fps=Math.round(frames*1000/(t-start));start=t;frames=0;}id=requestAnimationFrame(frame);}
@@ -1470,6 +1470,6 @@
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
   {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
-  <input hidden bind:this={fileInput} type="file" accept=".gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
+  <input hidden bind:this={fileInput} type="file" accept=".tkv,.gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>
 <ExportDialog bind:this={exporter} {project} {path} {filters} {pageTags} convert={convertExternal} ensureSaved={ensureExportSaved} notify={exportNotice}/>

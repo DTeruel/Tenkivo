@@ -3866,6 +3866,7 @@ dependencies = [
  "tempfile",
  "webview2-com",
  "windows",
+ "winreg",
  "zip",
 ]
 
