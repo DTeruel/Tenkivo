@@ -1188,7 +1188,9 @@
     </div>
     <details class="page-trash"><summary><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 9v9m4-9v9"/></svg>Trash ({project.trash?.length??0})</summary>
       <div>{#each project.trash??[] as p}<button disabled={!editing} onclick={()=>restorePage(p)}>Restore {p.name}</button>{:else}<small>Trash is empty.</small>{/each}</div>
-      <button disabled={!editing || !project.trash?.length} onclick={()=>ask('Empty trash')}>Empty trash…</button>
+      {#if project.trash?.length}
+        <button class="empty-trash" disabled={!editing} onclick={()=>ask('Empty trash')}>Empty trash…</button>
+      {/if}
     </details>
   </DockPanel>
   <main><div class="boardhead"><div><div class="canvas-label"><span class="section">Canvas</span>{#if !editing}<span class="read-caption">Editing is locked</span><button class="enable-edit" onclick={toggleEdit}>Enable editing <kbd>E</kbd></button>{/if}</div><h1>{board.name}</h1></div></div>

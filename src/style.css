@@ -75,6 +75,8 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .page-trash summary {font-size:12px;font-weight:600}
 .page-trash>div {max-height:22vh;overflow:auto;padding:5px}
 .page-trash button {display:block}
+.page-trash .empty-trash {width:100%;margin-top:4px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font-weight:600}
+.page-trash .empty-trash:hover:not(:disabled) {border-color:var(--muted);background:var(--wash)}
 .canvas-label {min-height:24px;gap:8px}
 .canvas-label .section {margin:0}
 .canvas-label .read-caption,.canvas-label .enable-edit {font-size:12px}
