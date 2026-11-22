@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+.svelte-kit/
+
+# Local build metadata and package manager logs
+*.tsbuildinfo
+pnpm-debug.log*
+npm-debug.log*
+
+# Desktop file manager metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

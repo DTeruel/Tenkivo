@@ -1,0 +1,53 @@
+.export-dialog {
+  color-scheme:light; --ink:CanvasText; --muted:GrayText; --paper:Canvas;
+  --line:color-mix(in srgb,CanvasText 22%,Canvas); --accent:CanvasText;
+  --wash:color-mix(in srgb,CanvasText 9%,Canvas);
+  width:min(640px,95vw); max-height:92vh; overflow:auto;
+  border:1px solid var(--line); border-radius:12px; padding:20px 24px;
+  color:CanvasText; background:Canvas;
+}
+.studio[data-theme=Dark] ~ .export-dialog {color-scheme:dark}
+@media(prefers-color-scheme:dark){.studio[data-theme=System] ~ .export-dialog{color-scheme:dark}}
+.export-dialog::backdrop {background:#10101070}
+.export-dialog h2 {margin:0 0 16px}
+.export-dialog .export-check {display:flex; align-items:center}
+.export-check input {width:auto}
+.export-dialog li,.preview-nav,.export-actions {display:flex;align-items:center;gap:10px}
+.export-dialog ul {padding:0;max-height:35vh;overflow:auto}
+.export-dialog li {padding:8px 0;border-bottom:1px solid var(--line);justify-content:space-between}
+.export-dialog li div {min-width:0;overflow-wrap:anywhere}
+.export-dialog li button {flex-shrink:0}
+.export-dialog li small {display:block}
+.export-dialog [role=alert]{color:#d66055}
+.export-actions {justify-content:flex-end;margin-top:16px}
+.export-actions button:last-child {background:CanvasText;color:Canvas}
+.preview-nav {justify-content:space-between;margin:8px 0}
+.pdf-preview {overflow:auto;background:#b6b8bc;padding:5px;text-align:center}
+.pdf-preview .pdf-paper {zoom:.5;text-align:left;margin:auto}
+@media(max-width:640px){.pdf-preview .pdf-paper{zoom:.33}}
+.print-root {position:fixed;left:-100000px;top:0;pointer-events:none}
+.pdf-paper {position:relative;width:1121px;height:792px;padding:38px 45px;overflow:hidden;color:#222;background:white;font:16px "Segoe UI",sans-serif;box-sizing:border-box;color-scheme:light}
+.pdf-paper h1 {font:32px Georgia,serif;margin:4px 0 14px;line-height:40px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.pdf-kicker,.pdf-foot {font-size:13px;color:#545862}
+.pdf-kicker {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdf-foot {position:absolute;left:45px;right:45px;bottom:24px;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:8px}
+.pdf-index a {display:flex;justify-content:space-between;align-items:center;height:34px;border-bottom:1px solid #ddd}
+.pdf-paper a {color:#245490}
+.pdf-window {position:relative;overflow:hidden}
+.pdf-world {position:absolute;transform-origin:0 0;isolation:isolate}
+.pdf-object {position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px solid;border-radius:8px;background:white}
+.pdf-object.frame {background:#f7f7f7;border-style:dashed;z-index:-1}
+.pdf-object strong {padding:8px 12px 5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.pdf-object small,.pdf-text {padding:4px 12px 8px;overflow-wrap:anywhere}
+.pdf-object img {width:100%;flex:1;min-height:0;object-fit:cover}
+.pdf-text {min-height:0;flex:1;white-space:pre-wrap;overflow:hidden}
+@page {size:A4 landscape;margin:0}
+@media print {
+  html,body,#app {margin:0!important;padding:0!important;height:auto!important;overflow:visible!important;background:white!important}
+  .studio,dialog,dialog::backdrop {display:none!important}
+  .print-root {position:static;pointer-events:auto}
+  .pdf-paper {break-after:page;break-inside:avoid;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .pdf-paper:last-child {break-after:auto}
+}
+
+.pdf-image-link {position:absolute;inset:0}

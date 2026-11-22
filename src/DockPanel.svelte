@@ -1,0 +1,59 @@
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+
+  let {name, panelClass, side=$bindable(), open=$bindable(), children}: {
+    name:string; panelClass:'sidebar'|'inspector'; side:string; open:boolean; children:Snippet
+  } = $props();
+  let panel:HTMLElement;
+  let target=$state(''), dragging=$state(false);
+  let start:{id:number;x:number;y:number;area:DOMRect}|undefined;
+
+  function begin(e:PointerEvent){
+    if(e.button!==0 || !e.isPrimary)return;
+    start={id:e.pointerId,x:e.clientX,y:e.clientY,area:panel.parentElement!.getBoundingClientRect()};
+    e.preventDefault();
+  }
+  function move(e:PointerEvent){
+    if(!start || start.id!==e.pointerId)return;
+    if(!dragging && Math.hypot(e.clientX-start.x,e.clientY-start.y)<5)return;
+    dragging=true;
+    const r=start.area, edge=Math.min(250,r.width*.25);
+    target='';
+    if(e.clientY<r.top || e.clientY>r.bottom || e.clientX<r.left || e.clientX>r.right)return;
+    if(e.clientX<=r.left+edge)target='left';
+    if(e.clientX>=r.right-edge)target='right';
+  }
+  function cancel(){dragging=false;target='';start=undefined;}
+  function finish(e:PointerEvent){
+    if(start?.id!==e.pointerId)return;
+    move(e);if(dragging && target)side=target;cancel();
+  }
+  function key(e:KeyboardEvent){
+    if(e.key==='Escape'){cancel();e.stopPropagation();return;}
+    if(e.ctrlKey || e.shiftKey || e.metaKey || e.altKey)return;
+    if(e.key==='ArrowLeft' || e.key==='ArrowRight'){
+      e.preventDefault();side=e.key==='ArrowLeft'?'left':'right';
+    }
+  }
+</script>
+
+<svelte:window onpointermove={move} onpointerup={finish} onpointercancel={cancel} onblur={cancel}/>
+<aside bind:this={panel} class={panelClass} class:collapsed={!open} aria-label={name}
+  style:order={(side==='left'?1:4)+(panelClass==='inspector'?1:0)}>
+  <div class="panel-head">
+    <button class="panel-grip" title={'Drag '+name+' to either edge, or use the arrow keys'} aria-label={'Move '+name}
+      onpointerdown={begin} onkeydown={key}>
+      <span aria-hidden="true" class="grip-dots"></span><span>{name}</span>
+    </button>
+    <button class="panel-fold" aria-expanded={open} aria-label={(open?'Collapse ':'Expand ')+name}
+      title={(open?'Collapse ':'Expand ')+name} onclick={()=>open=!open}>
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true" style:transform={(side==='left')===open?'':'rotate(180deg)'}><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>
+    </button>
+  </div>
+  {#if open}<div class="panel-content">{@render children()}</div>{/if}
+</aside>
+{#if dragging}
+  {#each ['left','right'] as edge}
+    <div class={'dock-target '+edge} class:over={edge===target} aria-hidden="true">Dock {edge}</div>
+  {/each}
+{/if}

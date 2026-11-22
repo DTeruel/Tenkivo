@@ -1,0 +1,25 @@
+[package]
+name = "tenkivo"
+version = "0.14.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+tempfile = "3"
+zip = {version="4", default-features=false, features= ["deflate"] }
+base64 = "0.22"
+dom_query = "0.29"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+semver = "1"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
+
+[target.'cfg(windows)'.dependencies]
+dunce = "1"
+windows = { version = "0.62", features = ["Win32_UI_Shell_Common", "Win32_System_Com"] }
+webview2-com = "0.39"
