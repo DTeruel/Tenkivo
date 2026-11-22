@@ -46,6 +46,7 @@ header nav{margin-left:0}.settings-button{margin-left:auto}
 .app-actions{margin-left:auto;display:flex;align-items:center;gap:3px}.app-actions .settings-button{margin:0}.app-actions svg{display:block;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .update-button{position:relative}
 .update-badge{position:absolute;top:2px;right:5px;width:10px;height:10px;border:2px solid var(--panel);border-radius:50%;background:#170ca3;background:light-dark(#4338ca,#7dd3fc);pointer-events:none}
+.settings .app-version{border-top:1px solid var(--line);margin:16px 0 0;padding-top:12px;font-size:12px;user-select:text}
 .project-tools{display:grid;grid-template-columns:minmax(max-content,1fr) auto minmax(max-content,1fr);gap:12px}.project-tools .mode-switch{justify-self:end}.navigation-tools{display:flex;align-items:center;gap:3px}.navigation-tools .divider{margin:0 4px}
 .nav-history{position:relative}.nav-history summary{list-style:none;cursor:pointer;padding:4px 7px;border-radius:4px;color:var(--muted)}.nav-history summary::-webkit-details-marker{display:none}.nav-history summary:hover{background:var(--wash)}
 .history-list{position:absolute;top:100%;left:0;z-index:25;min-width:180px;max-width:320px;max-height:45vh;overflow:auto;display:grid;padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--paper);box-shadow:0 4px 14px #0002}.history-list button{display:flex;justify-content:space-between;gap:8px;text-align:left}.history-list [aria-current=page]{font-weight:650}

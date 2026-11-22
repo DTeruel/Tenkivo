@@ -7,6 +7,7 @@
   import AttachmentImage from './AttachmentImage.svelte';
   import MediaPlayer from './MediaPlayer.svelte';
   import {getCurrentWebview} from '@tauri-apps/api/webview';
+  import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
   import {invoke,diagnostics,recordError} from './diagnostics.svelte';
   import { isTauri } from '@tauri-apps/api/core';
@@ -17,6 +18,7 @@
   import type { Department, Destination, Item, Kind, Page, TextLink, ProjectUser, PageVersion, BrushStroke, ObjectPort, Project } from './model';
 
   const tenkivoIcon=new URL('../src-tauri/icons/icon.png',import.meta.url).href;
+  let appVersion=$state('Loading…');
 
   function fitText(node:HTMLElement, options:{enabled?:boolean;size:number;text:string}){
     let frame=0;
@@ -953,6 +955,7 @@
     }catch(err){status=String(err);}finally{busy=false;}
   }
   onMount(()=>{
+    if(isTauri())void getVersion().then(version=>{appVersion=version;}).catch(()=>{appVersion='Unavailable';});
     const listener=isTauri()?getCurrentWebview().onDragDropEvent(({payload})=>{
       if(welcome || payload.type!=='drop')return;
       const r=viewport.getBoundingClientRect(),x=payload.position.x/devicePixelRatio-r.left,y=payload.position.y/devicePixelRatio-r.top;
@@ -1252,6 +1255,7 @@
       <input type="number" min="0" max={key==='rotate'?360:10000} step="any" value={snapping[key]} disabled={!welcome && !editing}
         onchange={e=>setSnap(key,e.currentTarget)}/></label>{/each}
     {#if welcome}<p>These defaults apply to projects without custom snapping values.</p>{:else if !editing}<p>Enable editing to change this project’s canvas snapping.</p>{/if}
+    {#if isTauri()}<p class="app-version">Tenkivo · Version {appVersion}</p>{/if}
   </dialog>
   <dialog bind:this={updateDialog} oncancel={e=>{if(installing)e.preventDefault();}}>
     {#if release}<h2>Update available</h2><p>Current version {release.current} · New version {release.version}</p>
