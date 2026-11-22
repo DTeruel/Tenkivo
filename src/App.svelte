@@ -10,7 +10,13 @@
   import {getCurrentWebview} from '@tauri-apps/api/webview';
   import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
-  import {invoke,diagnostics,recordActivity,recordError} from './diagnostics.svelte';
+  import {invoke,diagnostics,recordActivity,recordError,loadLogHistory,clearLogHistory} from './diagnostics.svelte';
+  let showingLogHistory=$state(false),confirmLogClear=$state(false);
+  function showLogs(history=false){
+    showingLogHistory=history;confirmLogClear=false;
+    if(history)loadLogHistory();
+    if(!dialog.open)ask('Editor logs');
+  }
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from '@tauri-apps/plugin-dialog';
   import { benchmark, defaultCatalog, editBody, item, page, sample, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
@@ -1092,7 +1098,7 @@
 {/snippet}
 
 {#snippet logsButton()}
-  <button aria-label="Editor logs" title="Editor logs" onclick={()=>ask('Editor logs')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
+  <button aria-label="Editor logs" title="Editor logs" onclick={()=>showLogs()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
 {/snippet}
 
 {#snippet closePanel(close:()=>void)}
@@ -1466,7 +1472,16 @@
   {:else if dialogType==='Add web link'}
     <form onsubmit={e=>{e.preventDefault();if(insertUrl(linkUrl,insertAt?.x,insertAt?.y))dialog.close();}}><label>URL<input type="url" required bind:value={linkUrl}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!webAddress(linkUrl)}>Add link</button></form>
   {:else if dialogType==='Editor logs'}
-    <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No activity recorded.</p>{/each}</div>
+    <div class="row" role="group" aria-label="Log sessions">
+      <button aria-pressed={!showingLogHistory} class:chosen={!showingLogHistory} onclick={()=>showLogs()}>Current session</button>
+      <button aria-pressed={showingLogHistory} class:chosen={showingLogHistory} onclick={()=>showLogs(true)}>Previous logs</button>
+    </div>
+    <div class="log-list">{#each [...(showingLogHistory?diagnostics.history:diagnostics.entries)].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>{showingLogHistory?'No previous logs.':'No activity recorded in this session.'}</p>{/each}</div>
+    {#if showingLogHistory && diagnostics.history.length}
+      {#if confirmLogClear}<p>Delete all previous logs?</p>
+        <button onclick={()=>confirmLogClear=false}>Cancel</button><button onclick={()=>{clearLogHistory();confirmLogClear=false;}}>Delete previous logs</button>
+      {:else}<button onclick={()=>confirmLogClear=true}>Clear previous logs…</button>{/if}
+    {/if}
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
   {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
