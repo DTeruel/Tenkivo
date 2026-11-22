@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Invoke-Git([string[]]$Arguments) {
@@ -15,6 +16,27 @@ function Get-VersionEdit([string]$Path, [string]$Pattern) {
     if ($matchesFound.Count -ne 1) { throw "Could not locate the app version in $Path." }
     $version = $matchesFound[0].Groups[1]
     [pscustomobject]@{ Path = $Path; FullPath = $fullPath; Content = $content; Version = $version }
+}
+
+function Get-ReleaseNotes {
+    $versionCommit = Invoke-Git @(
+        'log', '--first-parent', '-1', '--format=%H', '-G', '^[[:space:]]*[[:punct:]]version[[:punct:]]:', 'HEAD', '--', 'package.json'
+    )
+    if (!$versionCommit) { throw 'Could not find the previous version in Git history.' }
+
+    $changes = @(Invoke-Git @('log', '--reverse', '--no-merges', '--format=%H', "$versionCommit..HEAD") |
+        ForEach-Object {
+            $commit = $_
+            $subject = Invoke-Git @('show', '-s', '--format=%s', $commit)
+            if ($subject -notmatch '^Release Tenkivo v[0-9]+\.[0-9]+\.[0-9]+$') {
+                $entries = @(Invoke-Git @('show', '-s', '--format=%(trailers:key=Release-Note,valueonly,unfold)', $commit) |
+                    Where-Object { $_.Trim() })
+                if ($entries.Count -gt 0) { $entries } else { $subject }
+            }
+        })
+    if ($changes.Count -eq 0) { $changes = @('Rebuilt the Windows portable package.') }
+
+    $changes | ForEach-Object { "- $($_.Trim())" }
 }
 
 try {
@@ -77,18 +99,14 @@ try {
         }
         $tag = "v$next"
         if (Invoke-Git @('tag', '--list', $tag)) { throw "Local tag $tag already exists." }
-        Write-Host 'Enter the release notes in English. Finish with a line containing only a period.'
-        $notes = @(while ($true) {
-            $line = Read-Host
-            if ($null -eq $line -or $line -ceq '.') { break }
-            $line
-        })
+        $notes = @(Get-ReleaseNotes)
     }
     $notesText = ($notes -join "`n").Trim()
     if (!$notesText) { throw 'Release notes are required.' }
 
     Write-Host ""
     Write-Host "Publish Tenkivo $tag to $repo as a public stable Windows release."
+    Write-Host "Release notes:"
     Write-Host $notesText
     Invoke-Git @('log', '--oneline', 'FETCH_HEAD..HEAD') | Out-Host
     if ((Read-Host 'Type PUBLISH to push to GitHub and start the release') -cne 'PUBLISH') {
