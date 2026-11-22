@@ -5,7 +5,7 @@
 <body><header><a class="brand" href="#top"><img src="tenkivo.png" alt="" width="36" height="36">Tenkivo</a><nav><a href="#workspace">Workspace</a><a href="#release">Release notes</a></nav></header>
 <main id="top"><section class="hero"><div><p class="eyebrow">Project design for Windows</p><h1>Design your<br><em>project.</em></h1>
 <p class="intro">Plan a game or an app on a visual canvas. Play audio and video alongside sketches and design notes, then filter by department to focus on the work you’re reviewing.</p>
-<a id="download" class="button" href="https://github.com/DTeruel/GameDesignApp/releases">View GitHub releases</a><p id="availability">Windows x64 · Portable executable</p></div>
+<a id="download" class="button" href="https://github.com/DTeruel/Tenkivo/releases">View GitHub releases</a><p id="availability">Windows x64 · Portable executable</p></div>
 <figure><a href="workspace.png" aria-label="View full workspace screenshot"><img src="workspace.png" alt="The Windows app displaying a framed landscape reference board, page tree and object inspector."></a></figure></section>
 <section id="workspace"><h2>Inside the workspace</h2><div class="features">
 <article><h3>Compose a board</h3><p>Arrange images and notes on an infinite canvas. Move them together in a frame, resize from a corner or rotate the selection.</p></article>
@@ -17,11 +17,11 @@
 <details><summary>0.3.0 · Canvas editing</summary><p>Transform multiple objects together, snap objects into position, fit notes to their boxes and return to previous views. Project settings, dockable panels and a recoverable page trash are included.</p></details>
 <details><summary>0.2.0 · Linked canvases</summary><p>Internal text and object links, nested page ordering, corner resizing and rotation, persistent editing mode across pages, a neutral dark theme and portable update checks.</p></details>
 <details><summary>0.1.0 · First desktop prototype</summary><p>Local projects, reference images, notes, frames, department filters and light and dark themes.</p></details></section></main>
-<footer>Tenkivo <a href="https://github.com/DTeruel/GameDesignApp">Project repository</a></footer>
+<footer>Tenkivo <a href="https://github.com/DTeruel/Tenkivo">Project repository</a></footer>
 <script>
-fetch('https://api.github.com/repos/DTeruel/GameDesignApp/releases/latest').then(r=>r.ok?r.json():null).then(release=>{
+fetch('https://api.github.com/repos/DTeruel/Tenkivo/releases/latest').then(r=>r.ok?r.json():null).then(release=>{
   const asset=release?.assets?.find(a=>a.name==='Tenkivo.exe') ?? release?.assets?.find(a=>a.name==='GameDesignStudio.exe');
-  if(asset && asset.browser_download_url.startsWith('https://github.com/DTeruel/GameDesignApp/releases/download/')){
+  if(asset && asset.browser_download_url.startsWith('https://github.com/DTeruel/Tenkivo/releases/download/')){
     const button=document.getElementById('download');button.href=asset.browser_download_url;button.textContent='Download for Windows';
     document.getElementById('availability').textContent=release.tag_name+' · Windows x64 · Portable executable';
   }

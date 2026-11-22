@@ -10,8 +10,8 @@ use std::{
     time::Duration,
 };
 
-const REPOSITORY: &str = "https://api.github.com/repos/DTeruel/GameDesignApp";
-const LATEST: &str = "https://api.github.com/repos/DTeruel/GameDesignApp/releases/latest";
+const REPOSITORY: &str = "https://api.github.com/repos/DTeruel/Tenkivo";
+const LATEST: &str = "https://api.github.com/repos/DTeruel/Tenkivo/releases/latest";
 const PORTABLE: &str = "Tenkivo.exe";
 const LEGACY_PORTABLE: &str = "GameDesignStudio.exe";
 const STAGED: &str = "Tenkivo.update.exe";
@@ -68,7 +68,7 @@ fn lookup() -> Result<Lookup, String> {
             .send()
             .map_err(|e| format!("Could not check repository access: {e}"))?;
         if repository.status().as_u16() == 404 {
-            return Err("GitHub returned HTTP 404 for DTeruel/GameDesignApp without signing in. The update repository may be private or unavailable.".into());
+            return Err("GitHub returned HTTP 404 for DTeruel/Tenkivo without signing in. The update repository may be private or unavailable.".into());
         }
         repository.error_for_status().map_err(|e| e.to_string())?;
         return Ok(Lookup::NoUpdate(
@@ -95,7 +95,7 @@ fn lookup() -> Result<Lookup, String> {
         .or_else(|| release.assets.iter().find(|a| a.name == LEGACY_PORTABLE))
         .ok_or_else(|| format!("Release {version} has no Windows portable executable."))?;
     let expected = format!(
-        "https://github.com/DTeruel/GameDesignApp/releases/download/{}/{}",
+        "https://github.com/DTeruel/Tenkivo/releases/download/{}/{}",
         release.tag_name, asset.name
     );
     if asset.browser_download_url != expected {
