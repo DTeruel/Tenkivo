@@ -180,10 +180,10 @@ pub async fn install_update(version: String) -> Result<(), String> {
             .and_then(|_| file.as_file().sync_all())
             .map_err(|e| e.to_string())?;
         file.persist(&dest).map_err(|e| e.to_string())?;
-        Command::new(dest)
-            .arg("--apply-portable-update")
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        if let Err(error) = Command::new(&dest).arg("--apply-portable-update").spawn() {
+            let _ = fs::remove_file(&dest);
+            return Err(error.to_string());
+        }
         Ok(())
     })
     .await
@@ -219,7 +219,35 @@ pub fn apply_if_staged() -> bool {
     let mut restart = Command::new(&target);
     if replace().is_err() {
         restart.arg("--update-failed");
+    } else {
+        restart.arg("--portable-update-complete");
     }
     let _ = restart.spawn();
     true
+}
+
+// Windows releases the staged image when the updater exits after spawning us.
+pub fn cleanup_after_update() {
+    if env::args_os().nth(1).as_deref() != Some(std::ffi::OsStr::new("--portable-update-complete"))
+    {
+        return;
+    }
+    let Ok(executable) = env::current_exe() else {
+        return;
+    };
+    let staged_name = match executable.file_name().and_then(|name| name.to_str()) {
+        Some(PORTABLE) => STAGED,
+        Some(LEGACY_PORTABLE) => LEGACY_STAGED,
+        _ => return,
+    };
+    let staged = executable.with_file_name(staged_name);
+    for _ in 0..50 {
+        match fs::remove_file(&staged) {
+            Ok(()) => return,
+            Err(error) if matches!(error.raw_os_error(), Some(5 | 32 | 33)) => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => return,
+        }
+    }
 }

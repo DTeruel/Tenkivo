@@ -141,6 +141,7 @@ fn main() {
     if updates::apply_if_staged() {
         return;
     }
+    updates::cleanup_after_update();
     #[cfg(windows)]
     {
         let register_only = std::env::args_os().nth(1).is_some_and(|arg| arg == "--register-project-files");
