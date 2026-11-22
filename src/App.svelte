@@ -10,7 +10,7 @@
   import {getCurrentWebview} from '@tauri-apps/api/webview';
   import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
-  import {invoke,diagnostics,recordError} from './diagnostics.svelte';
+  import {invoke,diagnostics,recordActivity,recordError} from './diagnostics.svelte';
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from '@tauri-apps/plugin-dialog';
   import { benchmark, defaultCatalog, editBody, item, page, sample, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
@@ -478,8 +478,10 @@
     if(!updateChecksActive || checking || cooldown)return;
     if(installing){scheduleUpdateCheck();return;}
     checking=true;
+    recordActivity('Updates',manual?'Checking GitHub Releases on request.':'Checking GitHub Releases automatically.');
     try{
-      const result=await invoke<typeof release>('check_update');
+      const {notice:result,message}=await invoke<{notice:typeof release;message:string}>('check_update');
+      recordActivity('Updates',message);
       if(!updateChecksActive || installing)return;
       const newVersion=result && result.version!==release?.version;
       release=result;
@@ -489,9 +491,9 @@
       }else if(!result){
         if(updateDialog.open)updateDialog.close();
         if(!manual)return;
-        status='No newer public portable release found.';cooldown=true;
+        status=message;cooldown=true;
       }
-    }catch{if(manual)status='Could not check GitHub Releases. Try again when online.';}
+    }catch(error){if(manual)status='Update check failed: '+String(error);}
     finally{checking=false;scheduleUpdateCheck();}
   }
   function openUpdates(){
@@ -508,7 +510,9 @@
         await saveFile();
         if(dirty){installing=false;updateError='Save your project before restarting.';return;}
       }
+      recordActivity('Updates','Downloading version '+version+'.');
       await invoke('install_update',{version});
+      recordActivity('Updates','Version '+version+' is ready. Restarting Tenkivo.');
       await invoke('restart_after_update');
     }
     catch(err){installing=false;updateError=String(err);}
@@ -1024,7 +1028,14 @@
     }catch(err){status=String(err);}finally{busy=false;}
   }
   onMount(()=>{
-    if(isTauri())void getVersion().then(version=>{appVersion=version;}).catch(()=>{appVersion='Unavailable';});
+    if(isTauri())void getVersion().then(version=>{
+      appVersion=version;
+      recordActivity('Startup','Tenkivo '+version+' started.');
+    }).catch(error=>{
+      appVersion='Unavailable';
+      recordError('Startup version',error);
+    });
+    else recordActivity('Startup','Tenkivo browser preview started.');
     const listener=isTauri()?getCurrentWebview().onDragDropEvent(({payload})=>{
       if(welcome || payload.type!=='drop')return;
       const r=viewport.getBoundingClientRect(),x=payload.position.x/devicePixelRatio-r.left,y=payload.position.y/devicePixelRatio-r.top;
@@ -1034,6 +1045,7 @@
     if(updateChecksActive)void invoke<boolean>('update_status').then(failed=>{
       if(failed){
         status='Update could not replace the executable. Close other copies and try again.';
+        recordActivity('Updates',status,'warning');
         scheduleUpdateCheck();
       }else void checkUpdates();
     }).catch(()=>{void checkUpdates();});
@@ -1056,6 +1068,10 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>
     {#if release}<span class="update-badge" aria-hidden="true"></span>{/if}
   </button>
+{/snippet}
+
+{#snippet logsButton()}
+  <button aria-label="Editor logs" title="Editor logs" onclick={()=>ask('Editor logs')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
 {/snippet}
 
 {#snippet closePanel(close:()=>void)}
@@ -1084,8 +1100,9 @@
 <div class="studio" data-theme={theme} class:launcher={welcome}>
   {#if welcome}
     <main class="welcome">
-      <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions"><button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}</div></div>
+      <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions"><button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}{@render logsButton()}</div></div>
       <div class="welcome-actions"><button disabled={launching} onclick={newProject}>New project…</button><button disabled={launching} onclick={openFile}>Open project…</button></div>
+      {#if status}<p role="status">{status}</p>{/if}
       <h2>Recent projects</h2>
       {#if welcomeError}<p role="alert">{welcomeError}</p>{/if}
       {#if launching}<p role="status">Opening project…</p>{/if}
@@ -1114,7 +1131,7 @@
       <button aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onclick={()=>ask('Keyboard shortcuts')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M8 15h8"/></svg></button>
       <button class="settings-button" aria-label="Settings" title="Settings" onclick={()=>settings.showModal()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.3-2 .9-2.1-.8-2 3.4L5 10.4v2.8l-1.7 1.6 2 3.5 2.2-.8 2 .9.5 2.2h4l.6-2.2 2-.9 2.1.8 2-3.5-1.7-1.6v-2.8l1.7-1.6-2-3.4-2.2.8-2-.9L14 3z"/><circle cx="12" cy="12" r="3"/></svg></button>
       {@render updatesButton()}
-      <button aria-label="Editor logs" title="Editor logs" onclick={()=>ask('Editor logs')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
+      {@render logsButton()}
     </div>
   </header>
   <div class="project-tools"><div class="filters"><button class:chosen={!filters.length} onclick={()=>setFilters([])}>All</button>{#each departments as d}<button aria-pressed={filters.includes(d)} class:chosen={filters.includes(d)} onclick={()=>setFilters(filters.includes(d)?filters.filter(v=>v!==d):[...filters,d])}><i style:background={colors[d]}></i>{names[d]}</button>{/each}</div>
@@ -1422,7 +1439,7 @@
   {:else if dialogType==='Add web link'}
     <form onsubmit={e=>{e.preventDefault();if(insertUrl(linkUrl,insertAt?.x,insertAt?.y))dialog.close();}}><label>URL<input type="url" required bind:value={linkUrl}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!webAddress(linkUrl)}>Add link</button></form>
   {:else if dialogType==='Editor logs'}
-    <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No errors recorded.</p>{/each}</div>
+    <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No activity recorded.</p>{/each}</div>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
   {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>

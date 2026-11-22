@@ -153,3 +153,5 @@ To test an update, keep a single copy of the previous portable executable open i
 Publish a stable public GitHub Release at `DTeruel/GameDesignApp` with a semantic version tag (e.g. `v0.2.0`), release notes and the Windows x64 asset named `Tenkivo.exe`. To let pre-0.14 builds update, include the same binary as `GameDesignStudio.exe` on the transition release. The portable app checks the latest public release at startup, hourly while open, and on demand. It shows both versions and the release notes before downloading. The downloaded binary must match the SHA-256 digest from the GitHub release API. Updating requires write access to the executable's directory. Offline users can continue working.
 
 The English product website lives in `docs/`. It can be served directly or published with GitHub Pages using the main branch and the docs folder. Its download button resolves the portable asset from the latest public release.
+
+**Editor logs** records the running version, update checks and their outcomes, and editor errors. Tenkivo checks GitHub Releases without signing in, so private releases are inaccessible even when the GitHub Actions publishing job succeeds.

@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+const REPOSITORY: &str = "https://api.github.com/repos/DTeruel/GameDesignApp";
 const LATEST: &str = "https://api.github.com/repos/DTeruel/GameDesignApp/releases/latest";
 const PORTABLE: &str = "Tenkivo.exe";
 const LEGACY_PORTABLE: &str = "GameDesignStudio.exe";
@@ -38,15 +39,41 @@ pub struct Notice {
     portable: bool,
 }
 
-fn lookup() -> Result<Option<(Client, Notice, Asset)>, String> {
+enum Lookup {
+    Available(Client, Notice, Asset),
+    NoUpdate(String),
+}
+
+#[derive(Serialize)]
+pub struct UpdateCheck {
+    notice: Option<Notice>,
+    message: String,
+}
+
+fn lookup() -> Result<Lookup, String> {
     let client = Client::builder()
         .user_agent("Tenkivo")
         .timeout(Duration::from_secs(40))
         .build()
         .map_err(|e| e.to_string())?;
-    let response = client.get(LATEST).send().map_err(|e| e.to_string())?;
+    let response = client
+        .get(LATEST)
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+        .send()
+        .map_err(|e| format!("Could not reach GitHub Releases: {e}"))?;
     if response.status().as_u16() == 404 {
-        return Ok(None);
+        let repository = client
+            .get(REPOSITORY)
+            .header(reqwest::header::CACHE_CONTROL, "no-cache")
+            .send()
+            .map_err(|e| format!("Could not check repository access: {e}"))?;
+        if repository.status().as_u16() == 404 {
+            return Err("GitHub returned HTTP 404 for DTeruel/GameDesignApp without signing in. The update repository may be private or unavailable.".into());
+        }
+        repository.error_for_status().map_err(|e| e.to_string())?;
+        return Ok(Lookup::NoUpdate(
+            "GitHub has no published stable release for this repository.".into(),
+        ));
     }
     let release: Release = response
         .error_for_status()
@@ -57,14 +84,16 @@ fn lookup() -> Result<Option<(Client, Notice, Asset)>, String> {
         Version::parse(release.tag_name.trim_start_matches('v')).map_err(|e| e.to_string())?;
     let current = env!("CARGO_PKG_VERSION");
     if version <= Version::parse(current).unwrap() {
-        return Ok(None);
+        return Ok(Lookup::NoUpdate(format!(
+            "Running version {current}. GitHub's latest stable release is {version}."
+        )));
     }
     let asset = release
         .assets
         .iter()
         .find(|a| a.name == PORTABLE)
         .or_else(|| release.assets.iter().find(|a| a.name == LEGACY_PORTABLE))
-        .ok_or("This release has no Windows portable executable.")?;
+        .ok_or_else(|| format!("Release {version} has no Windows portable executable."))?;
     let expected = format!(
         "https://github.com/DTeruel/GameDesignApp/releases/download/{}/{}",
         release.tag_name, asset.name
@@ -78,7 +107,7 @@ fn lookup() -> Result<Option<(Client, Notice, Asset)>, String> {
             .as_deref()
             .and_then(Path::file_name)
             .is_some_and(|v| v == PORTABLE || v == LEGACY_PORTABLE);
-    Ok(Some((
+    Ok(Lookup::Available(
         client,
         Notice {
             version: version.to_string(),
@@ -87,13 +116,23 @@ fn lookup() -> Result<Option<(Client, Notice, Asset)>, String> {
             portable,
         },
         asset.clone(),
-    )))
+    ))
 }
 
 #[tauri::command]
-pub async fn check_update() -> Result<Option<Notice>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        lookup().map(|release| release.map(|(_, notice, _)| notice))
+pub async fn check_update() -> Result<UpdateCheck, String> {
+    tauri::async_runtime::spawn_blocking(|| match lookup()? {
+        Lookup::Available(_, notice, asset) => Ok(UpdateCheck {
+            message: format!(
+                "Running version {}. GitHub offers {} ({}).",
+                notice.current, notice.version, asset.name
+            ),
+            notice: Some(notice),
+        }),
+        Lookup::NoUpdate(message) => Ok(UpdateCheck {
+            notice: None,
+            message,
+        }),
     })
     .await
     .map_err(|e| e.to_string())?
@@ -102,7 +141,9 @@ pub async fn check_update() -> Result<Option<Notice>, String> {
 #[tauri::command]
 pub async fn install_update(version: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let (client, notice, asset) = lookup()?.ok_or("Release unavailable.")?;
+        let Lookup::Available(client, notice, asset) = lookup()? else {
+            return Err("Release unavailable.".into());
+        };
         if !notice.portable || notice.version != version {
             return Err("Check for updates again.".into());
         }
@@ -110,7 +151,10 @@ pub async fn install_update(version: String) -> Result<(), String> {
             return Err("Unexpected download size.".into());
         }
         let executable = env::current_exe().map_err(|e| e.to_string())?;
-        let stage_name = if executable.file_name().is_some_and(|name| name == LEGACY_PORTABLE) {
+        let stage_name = if executable
+            .file_name()
+            .is_some_and(|name| name == LEGACY_PORTABLE)
+        {
             LEGACY_STAGED
         } else {
             STAGED
