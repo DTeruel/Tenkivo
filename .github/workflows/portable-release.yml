@@ -1,0 +1,110 @@
+name: Publish Tenkivo for Windows
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: tenkivo-portable-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate version and release notes
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw "Expected a stable version tag, got $tag."
+          }
+          $version = $tag.Substring(1)
+          $versions = @(
+            (Get-Content package.json -Raw | ConvertFrom-Json).version
+            (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+            [regex]::Match((Get-Content src-tauri/Cargo.toml -Raw), '(?m)^version = "([^"]+)"').Groups[1].Value
+            [regex]::Match((Get-Content src-tauri/Cargo.lock -Raw), '(?m)^name = "tenkivo"\r?\nversion = "([^"]+)"').Groups[1].Value
+          )
+          if ($versions | Where-Object { $_ -ne $version }) { throw "Version files must match $tag." }
+          $ref = "refs/tags/$tag"
+          $objectType = git cat-file -t $ref
+          if ($LASTEXITCODE -ne 0 -or $objectType -ne 'tag') { throw 'Expected an annotated release tag.' }
+          $notes = (git for-each-ref '--format=%(contents)' $ref | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or !$notes) { throw 'Release tag has no notes.' }
+          Set-Content -LiteralPath "$env:RUNNER_TEMP/tenkivo-release-notes.md" -Value $notes -Encoding utf8
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Build and stage portable executables
+        run: |
+          rustup update stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm install --global pnpm@11.25.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm desktop build --no-bundle
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- src-tauri/Cargo.lock
+          if ($LASTEXITCODE -ne 0) { throw 'The portable build changed Cargo.lock.' }
+          $binary = Get-Item -LiteralPath 'src-tauri/target/release/tenkivo.exe'
+          if ($binary.VersionInfo.ProductVersion -ne $env:GITHUB_REF_NAME.Substring(1)) {
+            throw "Unexpected executable version: $($binary.VersionInfo.ProductVersion)."
+          }
+          if ($binary.Length -gt 128MB) { throw 'Executable exceeds the updater download limit.' }
+          Copy-Item -LiteralPath $binary.FullName -Destination "$env:RUNNER_TEMP/Tenkivo.exe"
+          Copy-Item -LiteralPath $binary.FullName -Destination "$env:RUNNER_TEMP/GameDesignStudio.exe"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $repo = $env:GITHUB_REPOSITORY
+          $existing = gh release view $tag --repo $repo --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (!($existing | ConvertFrom-Json).isDraft) {
+              Write-Host "$tag has already been published."
+              exit 0
+            }
+          } else {
+            gh release create $tag --repo $repo --verify-tag --draft --title "Tenkivo $tag" --notes-file "$env:RUNNER_TEMP/tenkivo-release-notes.md"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" "$env:RUNNER_TEMP/GameDesignStudio.exe" --repo $repo --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $releaseId = gh release view $tag --repo $repo --json databaseId --jq '.databaseId'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $assetsJson = gh api "repos/$repo/releases/$releaseId/assets"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $assets = $assetsJson | ConvertFrom-Json
+          foreach ($name in 'Tenkivo.exe', 'GameDesignStudio.exe') {
+            $local = Get-FileHash -LiteralPath "$env:RUNNER_TEMP/$name" -Algorithm SHA256
+            $asset = $assets | Where-Object name -CEQ $name
+            if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$($local.Hash)") {
+              throw "GitHub did not report the expected SHA-256 for $name."
+            }
+          }
+          $latest = gh release list --repo $repo --exclude-drafts --exclude-pre-releases --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $publishAsLatest = 'true'
+          if ($latest -match '^v?(\d+\.\d+\.\d+)$' -and [version]$Matches[1] -gt [version]$tag.Substring(1)) {
+            $publishAsLatest = 'false'
+          }
+          gh release edit $tag --repo $repo --draft=false "--latest=$publishAsLatest"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

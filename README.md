@@ -144,6 +144,10 @@ For live desktop iteration on Windows, open `Live preview.cmd` from the checkout
 
 ## Portable releases
 
+On Windows, double-click **Publish Tenkivo.cmd** from a clean `main` checkout. The publisher uses the existing Git credentials for `origin`. It shows the current version, suggests the next patch version, and asks for the release notes and confirmation. After you type `PUBLISH`, it commits the version files and pushes `main` and the annotated version tag together. GitHub Actions builds and publishes the Windows portable files. Follow the run under **Actions → Publish Tenkivo for Windows**. If the push fails, fix the Git error and run the publisher again to retry the local tag. If the build or upload fails, rerun the failed job in Actions. Wait for the run to finish before starting another release.
+
+To test an update, keep a single copy of the previous portable executable open in a writable folder. When the new release is live, click **Check for updates**, then **Update and restart**. A manual check that finds no newer version disables the button for one hour or until the next launch.
+
 Publish a stable public GitHub Release at `DTeruel/GameDesignApp` with a semantic version tag (e.g. `v0.2.0`), release notes and the Windows x64 asset named `Tenkivo.exe`. To let pre-0.14 builds update, include the same binary as `GameDesignStudio.exe` on the transition release. The portable app checks the latest public release at startup and on demand. It shows both versions and the release notes before downloading. The downloaded binary must match the SHA-256 digest from the GitHub release API. Updating requires write access to the executable's directory. Offline users can continue working.
 
 The English product website lives in `docs/`. It can be served directly or published with GitHub Pages using the main branch and the docs folder. Its download button resolves the portable asset from the latest public release.
