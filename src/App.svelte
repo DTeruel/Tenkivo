@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import {connectionPath,portPosition,portSides} from './connections';
+  import {collectSelection,preparePaste,remapLinks,type CanvasClipboard} from './canvasClipboard';
   import DrawingStroke from './DrawingStroke.svelte';
   import DockPanel from './DockPanel.svelte';
   import ExportDialog from './ExportDialog.svelte';
@@ -72,6 +73,7 @@
   let project = $state(initial), current = $state(initial.pages[0].id);
   let board = $derived(project.pages.find(p=>p.id===current)!);
   let ids=$state<string[]>([]);
+  let canvasClipboard=$state.raw<CanvasClipboard>();
   let picked=$derived(board.items.filter(o=>ids.includes(o.id)));
   let active=$derived(picked.length===1?picked[0]:undefined);
   let liveBox=$state<Box>();
@@ -112,7 +114,7 @@
   }
   function setLimit(n:number){historyLimit=normalizeLimit(n);localStorage.setItem('navigation-limit',String(historyLimit));trimHistory();}
   function view(){return {page:current,x:tx,y:ty,zoom,ids:[...ids]};}
-  function resetViews(){wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;}
+  function resetViews(){wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;canvasClipboard=undefined;}
   function rememberView(){if(cursor>=0)history[cursor]=view();}
   function travel(step:number){
     if(historyMenu)historyMenu.open=false;
@@ -122,7 +124,71 @@
   }
   function setFilters(next:Department[]){filters=next;ids=picked.filter(o=>matches(itemTags(o),next)).map(o=>o.id);}
   function context(e:MouseEvent,p?:Page,o?:Item){e.preventDefault();e.stopPropagation();selectedConnection='';if(o && !ids.includes(o.id))ids=[o.id];menu={x:Math.min(e.clientX,innerWidth-190),y:Math.min(e.clientY,innerHeight-260),page:p};}
-  function removeObjects(){if(!editing)return;board.connections=board.connections?.filter(c=>!ids.includes(c.from.objectId) && !ids.includes(c.to.objectId));board.items=board.items.filter(o=>!ids.includes(o.id));for(const o of board.items)if(o.parent && ids.includes(o.parent))o.parent=undefined;ids=[];menu=undefined;change();}
+  function removeObjects(selection=ids){
+    if(!editing || !selection.length)return;
+    const removed=new Set(selection);
+    board.connections=board.connections?.filter(c=>!removed.has(c.from.objectId) && !removed.has(c.to.objectId));
+    board.items=board.items.filter(o=>!removed.has(o.id));
+    for(const o of board.items)if(o.parent && removed.has(o.parent))o.parent=undefined;
+    ids=[];menu=undefined;change();
+  }
+  function canvasClipboardBlocked(target:EventTarget|null){
+    return welcome || drawingMode || !!document.querySelector('dialog[open]') ||
+      (target instanceof Element && !!target.closest('textarea,input,select,[contenteditable]:not([contenteditable=false]),audio,video'));
+  }
+  function copyObjects(cut:boolean,event?:ClipboardEvent){
+    if(event && (canvasClipboardBlocked(event.target) || window.getSelection()?.isCollapsed===false))return;
+    if(cut && !editing){if(ids.length)status=readHint;return;}
+    const selection=collectSelection(board,ids,cut);
+    if(!selection)return;
+    canvasClipboard=$state.snapshot(selection);
+    if(event){
+      event.clipboardData?.setData('text/plain',selection.token);
+      event.preventDefault();
+    }else{
+      void navigator.clipboard?.writeText(selection.token).catch(()=>{});
+    }
+    if(cut){
+      commit();typingField=null;
+      removeObjects(selection.items.map(o=>o.id));
+    }
+    menu=undefined;
+    status=(cut?'Cut ':'Copied ')+selection.items.length+(selection.items.length===1?' object':' objects');
+  }
+  function pasteObjects(point?:{x:number;y:number}){
+    const clipboard=canvasClipboard;
+    if(!clipboard)return;
+    if(!editing){status=readHint;return;}
+    const movedIds=new Set(clipboard.items.map(o=>o.id));
+    const pages=[...project.pages,...project.trash??[]];
+    const move=clipboard.cut && !clipboard.pastes && !pages.some(p=>p.items.some(o=>movedIds.has(o.id)));
+    const source=enclosure(clipboard.items);
+    const center={x:(width/2-tx)/zoom,y:(height/2-ty)/zoom};
+    const offset=(move?0:clipboard.pastes+1)*24/zoom;
+    const samePage=clipboard.pageId===current;
+    const sourceVisible=source.x*zoom+tx<width && source.y*zoom+ty<height &&
+      (source.x+source.w)*zoom+tx>0 && (source.y+source.h)*zoom+ty>0;
+    const origin=point ?? (samePage && sourceVisible
+      ? {x:source.x+offset,y:source.y+offset}
+      : {x:center.x-source.w/2+offset,y:center.y-source.h/2+offset});
+    const pasted=preparePaste(clipboard,board,move,origin.x-source.x,origin.y-source.y);
+
+    commit();typingField=null;
+    if(move && !samePage){
+      for(const p of pages)for(const o of p.items)remapLinks(o,to=>
+        to.pageId===clipboard.pageId && to.itemId && movedIds.has(to.itemId) ? {...to,pageId:current} : to);
+    }
+    board.items.push(...pasted.items);
+    if(pasted.connections.length)board.connections=[...board.connections??[],...pasted.connections];
+    canvasClipboard={...clipboard,pastes:clipboard.pastes+1};
+    const roots=new Set(pasted.roots);
+    ids=pasted.items.filter(o=>roots.has(o.id) && matches(itemTags(o),filters)).map(o=>o.id);
+    selectedConnection='';frameOnly='';focusArea='canvas';menu=undefined;
+    change();
+    const hidden=pasted.items.some(o=>!matches(itemTags(o),filters));
+    status='Pasted '+pasted.items.length+(pasted.items.length===1?' object':' objects')+
+      (hidden?' · Department filters hide some pasted content':'');
+  }
   function requestDelete(p:Page){if(!editing)return;pendingPage=p;menu=undefined;ask('Delete page');}
   async function deletePage(){
     const p=pendingPage;if(!p || !editing)return;
@@ -229,9 +295,12 @@
     return true;
   }
   function paste(e:ClipboardEvent){
-    if(welcome)return;
-    if(document.querySelector('dialog[open]') || (e.target as HTMLElement)?.closest?.('textarea,input,[contenteditable=true]'))return;
-    if(insertUrl(e.clipboardData?.getData('text/plain')??''))e.preventDefault();
+    if(canvasClipboardBlocked(e.target))return;
+    const text=e.clipboardData?.getData('text/plain')??'';
+    if(canvasClipboard && (!text || text===canvasClipboard.token)){
+      e.preventDefault();
+      pasteObjects();
+    }else if(insertUrl(text))e.preventDefault();
   }
   let zoom = $state(1), tx = $state(30), ty = $state(40), width = $state(800), height = $state(600);
   let viewport=$state<HTMLDivElement>(null!), imageInput: HTMLInputElement, fileInput: HTMLInputElement, dialog: HTMLDialogElement;
@@ -1011,7 +1080,7 @@
     </fieldset>
   </details>
 {/snippet}
-<svelte:window onpaste={paste} onpointermove={e=>pagePointerMove(e)} onpointerup={e=>pagePointerMove(e,true)} onpointercancel={()=>{pagePointer=undefined;draggingPage='';treeDrop='';}} onkeydown={keys} onkeyup={e=>{if(e.key==='Alt')altHeld=false;}} onblur={()=>{altHeld=false;wire=undefined;}} oncontextmenu={e=>e.preventDefault()} onpointerdown={e=>{if(!(e.target as HTMLElement).closest('.app-menu'))menu=undefined;if(historyMenu && !historyMenu.contains(e.target as Node))historyMenu.open=false;if(fileMenu && !fileMenu.contains(e.target as Node))fileMenu.open=false;}}/>
+<svelte:window oncopy={e=>copyObjects(false,e)} oncut={e=>copyObjects(true,e)} onpaste={paste} onpointermove={e=>pagePointerMove(e)} onpointerup={e=>pagePointerMove(e,true)} onpointercancel={()=>{pagePointer=undefined;draggingPage='';treeDrop='';}} onkeydown={keys} onkeyup={e=>{if(e.key==='Alt')altHeld=false;}} onblur={()=>{altHeld=false;wire=undefined;}} oncontextmenu={e=>e.preventDefault()} onpointerdown={e=>{if(!(e.target as HTMLElement).closest('.app-menu'))menu=undefined;if(historyMenu && !historyMenu.contains(e.target as Node))historyMenu.open=false;if(fileMenu && !fileMenu.contains(e.target as Node))fileMenu.open=false;}}/>
 <div class="studio" data-theme={theme} class:launcher={welcome}>
   {#if welcome}
     <main class="welcome">
@@ -1188,7 +1257,7 @@
   </DockPanel>
   </div>
   {#if menu}
-    <div class="app-menu" style:left={menu.x+'px'} style:top={Math.max(0,menu.y)+'px'}>
+    <div class="app-menu" style:left={menu.x+'px'} style:top={Math.max(0,menu.y)+'px'} style:max-height={'calc(100dvh - '+(Math.max(0,menu.y)+8)+'px)'}>
       {#if menu.page}
         {@const target=menu.page}
         {#if target.id!==current}<button onclick={()=>{void navigate(target);menu=undefined;}}>Open page</button>{/if}
@@ -1202,12 +1271,20 @@
         <hr/>
         <button disabled={!editing} onclick={()=>requestDelete(target)}>Delete page…</button>
       {:else if menu.canvas}
+        {#if !menu.fromAdd}
+          <button disabled={!editing || !canvasClipboard} onclick={()=>pasteObjects(menu?.point)}>Paste</button>
+          <hr/>
+        {/if}
         <div class="menu-heading">New</div>
         {#each ['Note','Image','Frame','Drawing','Page link','Web link',...(isTauri()?['File','Folder']:[])] as kind}
           <button disabled={!editing} onclick={()=>insert(kind)}>{kind}</button>
         {/each}
         {#if !menu.fromAdd}<button class="menu-export" onclick={()=>{menu=undefined;exporter.show(board);}}>Export page as PDF…</button>{/if}
       {:else}
+        <button disabled={!picked.length} onclick={()=>copyObjects(false)}>Copy</button>
+        <button disabled={!editing || !picked.length} onclick={()=>copyObjects(true)}>Cut</button>
+        <button disabled={!editing || !canvasClipboard} onclick={()=>pasteObjects()}>Paste</button>
+        <hr/>
         <button onclick={()=>{fit();menu=undefined;}}>Focus selection</button>
         {@render departmentPicker()}
         {#if active?.kind==='Image'}{@render imageTitle(active)}{/if}
@@ -1228,7 +1305,7 @@
             </div></div>
           {/each}
         {/if}
-        <button disabled={!editing} onclick={removeObjects}>Delete selection</button>
+        <button disabled={!editing} onclick={()=>removeObjects()}>Delete selection</button>
       {/if}
     </div>
   {/if}
@@ -1347,7 +1424,7 @@
   {:else if dialogType==='Editor logs'}
     <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No errors recorded.</p>{/each}</div>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
-  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
+  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
   <input hidden bind:this={fileInput} type="file" accept=".gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>
