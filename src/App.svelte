@@ -210,6 +210,13 @@
     const next=project.pages.find(v=>v.id===current)??project.pages[0];history=[];cursor=-1;await navigate(next);dialog.close();change();
   }
   function restorePage(p:Page){if(!editing)return;if(!project.pages.some(v=>v.id===p.parentId))p.parentId=undefined;project.pages.push(p);project.trash=project.trash?.filter(v=>v.id!==p.id);change();}
+  function emptyTrash(){
+    if(!editing || !project.trash?.length)return;
+    commit();
+    project.trash=[];
+    change();
+    dialog.close();
+  }
   function align(axis:'x'|'y',factor:number){
     if(!editing || !box)return;
     const roots=picked.filter(o=>!o.parent || !ids.includes(o.parent));
@@ -1181,6 +1188,7 @@
     </div>
     <details class="page-trash"><summary><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 9v9m4-9v9"/></svg>Trash ({project.trash?.length??0})</summary>
       <div>{#each project.trash??[] as p}<button disabled={!editing} onclick={()=>restorePage(p)}>Restore {p.name}</button>{:else}<small>Trash is empty.</small>{/each}</div>
+      <button disabled={!editing || !project.trash?.length} onclick={()=>ask('Empty trash')}>Empty trash…</button>
     </details>
   </DockPanel>
   <main><div class="boardhead"><div><div class="canvas-label"><span class="section">Canvas</span>{#if !editing}<span class="read-caption">Editing is locked</span><button class="enable-edit" onclick={toggleEdit}>Enable editing <kbd>E</kbd></button>{/if}</div><h1>{board.name}</h1></div></div>
@@ -1482,6 +1490,8 @@
         <button onclick={()=>confirmLogClear=false}>Cancel</button><button onclick={()=>{clearLogHistory();confirmLogClear=false;}}>Delete previous logs</button>
       {:else}<button onclick={()=>confirmLogClear=true}>Clear previous logs…</button>{/if}
     {/if}
+  {:else if dialogType==='Empty trash'}<p>Remove {project.trash?.length} {project.trash?.length===1?'page':'pages'} from this project’s trash?</p>
+    <button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
   {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
