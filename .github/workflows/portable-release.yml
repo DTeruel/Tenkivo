@@ -50,7 +50,7 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
-      - name: Build and stage portable executables
+      - name: Build and stage Tenkivo.exe
         run: |
           rustup update stable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -68,7 +68,6 @@ jobs:
           }
           if ($binary.Length -gt 128MB) { throw 'Executable exceeds the updater download limit.' }
           Copy-Item -LiteralPath $binary.FullName -Destination "$env:RUNNER_TEMP/Tenkivo.exe"
-          Copy-Item -LiteralPath $binary.FullName -Destination "$env:RUNNER_TEMP/GameDesignStudio.exe"
 
       - name: Publish the GitHub release
         env:
@@ -86,19 +85,17 @@ jobs:
             gh release create $tag --repo $repo --verify-tag --draft --title "Tenkivo $tag" --notes-file "$env:RUNNER_TEMP/tenkivo-release-notes.md"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" "$env:RUNNER_TEMP/GameDesignStudio.exe" --repo $repo --clobber
+          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" --repo $repo --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $releaseId = gh release view $tag --repo $repo --json databaseId --jq '.databaseId'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assetsJson = gh api "repos/$repo/releases/$releaseId/assets"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assets = $assetsJson | ConvertFrom-Json
-          foreach ($name in 'Tenkivo.exe', 'GameDesignStudio.exe') {
-            $local = Get-FileHash -LiteralPath "$env:RUNNER_TEMP/$name" -Algorithm SHA256
-            $asset = $assets | Where-Object name -CEQ $name
-            if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$($local.Hash)") {
-              throw "GitHub did not report the expected SHA-256 for $name."
-            }
+          $local = Get-FileHash -LiteralPath "$env:RUNNER_TEMP/Tenkivo.exe" -Algorithm SHA256
+          $asset = $assets | Where-Object name -CEQ 'Tenkivo.exe'
+          if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$($local.Hash)") {
+            throw 'GitHub did not report the expected SHA-256 for Tenkivo.exe.'
           }
           $latest = gh release list --repo $repo --exclude-drafts --exclude-pre-releases --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
