@@ -391,24 +391,55 @@
   const fileFilters = [{name:'Tenkivo',extensions:['gdstudio']}];
   let release=$state<{current:string;version:string;notes:string;portable:boolean}|null>(null);
   let updateDialog:HTMLDialogElement, installing=$state(false), updateError=$state('');
-  let checking=$state(false),cooldown=$state(false),cooldownTimer:ReturnType<typeof setTimeout>;
+  const updateInterval=60*60*1000;
+  let checking=$state(false),cooldown=$state(false),updateTimer:ReturnType<typeof setTimeout>;
+  let updateChecksActive=false;
+  const updateLabel=$derived(release?'Update available · '+release.version:cooldown?'Up to date · Next check within one hour':checking?'Checking for updates…':'Check for updates');
+  function scheduleUpdateCheck(){
+    clearTimeout(updateTimer);
+    if(!updateChecksActive)return;
+    updateTimer=setTimeout(()=>{
+      cooldown=false;
+      void checkUpdates();
+    },updateInterval);
+  }
   async function checkUpdates(manual=false){
-    if(!isTauri() || checking || cooldown)return;
+    if(!updateChecksActive || checking || cooldown)return;
+    if(installing){scheduleUpdateCheck();return;}
     checking=true;
     try{
       const result=await invoke<typeof release>('check_update');
-      if(result){release=result;updateError='';if(!updateDialog.open)updateDialog.showModal();}
-      else if(manual){
+      if(!updateChecksActive || installing)return;
+      const newVersion=result && result.version!==release?.version;
+      release=result;
+      if(newVersion){
+        updateError='';
+        if(!updateDialog.open)updateDialog.showModal();
+      }else if(!result){
+        if(updateDialog.open)updateDialog.close();
+        if(!manual)return;
         status='No newer public portable release found.';cooldown=true;
-        cooldownTimer=setTimeout(()=>cooldown=false,60*60*1000);
       }
-    }catch{if(manual)status='Could not check GitHub Releases. Try again when online.';}finally{checking=false;}
+    }catch{if(manual)status='Could not check GitHub Releases. Try again when online.';}
+    finally{checking=false;scheduleUpdateCheck();}
+  }
+  function openUpdates(){
+    if(release){
+      if(!updateDialog.open)updateDialog.showModal();
+    }else void checkUpdates(true);
   }
   async function applyUpdate(){
     if(!release || installing)return;
-    if(dirty){await saveFile();if(dirty){updateError='Save your project before restarting.';return;}}
+    const version=release.version;
     installing=true;
-    try{await invoke('install_update',{version:release.version});await invoke('restart_after_update');}
+    try{
+      if(dirty){
+        await saveFile();
+        if(dirty){installing=false;updateError='Save your project before restarting.';return;}
+      }
+      await invoke('install_update',{version});
+      await invoke('restart_after_update');
+    }
     catch(err){installing=false;updateError=String(err);}
   }
   let range = $state<{id:string; start:number; end:number}>();
@@ -927,10 +958,13 @@
       const r=viewport.getBoundingClientRect(),x=payload.position.x/devicePixelRatio-r.left,y=payload.position.y/devicePixelRatio-r.top;
       if(x>=0 && y>=0 && x<=r.width && y<=r.height)offerFiles(payload.paths,(x-tx)/zoom,(y-ty)/zoom);
     }):undefined;
-    if(isTauri())void invoke<boolean>('update_status').then(failed=>{
-      if(failed)status='Update could not replace the executable. Close other copies and try again.';
-      else void checkUpdates();
-    });
+    updateChecksActive=isTauri();
+    if(updateChecksActive)void invoke<boolean>('update_status').then(failed=>{
+      if(failed){
+        status='Update could not replace the executable. Close other copies and try again.';
+        scheduleUpdateCheck();
+      }else void checkUpdates();
+    }).catch(()=>{void checkUpdates();});
     const last=localStorage.getItem('studio-last');
     if(isTauri() && startup==='last' && last)void openRecent(last);
     else void checkRecent();
@@ -941,9 +975,16 @@
     const refresh=()=>{if(welcome)void checkRecent();};
     window.addEventListener('focus',refresh);
     window.addEventListener('beforeunload',before);
-    return ()=>{window.removeEventListener('focus',refresh);clearTimeout(cooldownTimer);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
+    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
   });
 </script>
+
+{#snippet updatesButton()}
+  <button class="update-button" aria-label={updateLabel} title={updateLabel} disabled={!isTauri() || (!release && (checking || cooldown))} onclick={openUpdates}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>
+    {#if release}<span class="update-badge" aria-hidden="true"></span>{/if}
+  </button>
+{/snippet}
 
 {#snippet closePanel(close:()=>void)}
   <button type="button" class="close-panel" title="Close" aria-label="Close" onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
@@ -971,7 +1012,7 @@
 <div class="studio" data-theme={theme} class:launcher={welcome}>
   {#if welcome}
     <main class="welcome">
-      <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button></div>
+      <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions"><button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}</div></div>
       <div class="welcome-actions"><button disabled={launching} onclick={newProject}>New project…</button><button disabled={launching} onclick={openFile}>Open project…</button></div>
       <h2>Recent projects</h2>
       {#if welcomeError}<p role="alert">{welcomeError}</p>{/if}
@@ -1000,7 +1041,7 @@
     <div class="app-actions">
       <button aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onclick={()=>ask('Keyboard shortcuts')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M8 15h8"/></svg></button>
       <button class="settings-button" aria-label="Settings" title="Settings" onclick={()=>settings.showModal()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.3-2 .9-2.1-.8-2 3.4L5 10.4v2.8l-1.7 1.6 2 3.5 2.2-.8 2 .9.5 2.2h4l.6-2.2 2-.9 2.1.8 2-3.5-1.7-1.6v-2.8l1.7-1.6-2-3.4-2.2.8-2-.9L14 3z"/><circle cx="12" cy="12" r="3"/></svg></button>
-      <button aria-label="Check for updates" title={cooldown?'Up to date · Check again in one hour':checking?'Checking for updates…':'Check for updates'} disabled={!isTauri() || checking || cooldown} onclick={()=>checkUpdates(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg></button>
+      {@render updatesButton()}
       <button aria-label="Editor logs" title="Editor logs" onclick={()=>ask('Editor logs')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
     </div>
   </header>
