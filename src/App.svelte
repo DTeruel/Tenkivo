@@ -10,11 +10,11 @@
   import {getCurrentWebview} from '@tauri-apps/api/webview';
   import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
-  import {invoke,diagnostics,recordActivity,recordError,loadLogHistory,clearLogHistory} from './diagnostics.svelte';
-  let showingLogHistory=$state(false),confirmLogClear=$state(false);
+  import {invoke,diagnostics,recordActivity,recordError} from './diagnostics.svelte';
+  let showingLogHistory=$state(false);
   function showLogs(history=false){
-    showingLogHistory=history;confirmLogClear=false;
-    if(history)loadLogHistory();
+    showingLogHistory=history;
+
     if(!dialog.open)ask('Editor logs');
   }
   import { isTauri } from '@tauri-apps/api/core';
@@ -1484,14 +1484,9 @@
   {:else if dialogType==='Editor logs'}
     <div class="row" role="group" aria-label="Log sessions">
       <button aria-pressed={!showingLogHistory} class:chosen={!showingLogHistory} onclick={()=>showLogs()}>Current session</button>
-      <button aria-pressed={showingLogHistory} class:chosen={showingLogHistory} onclick={()=>showLogs(true)}>Previous logs</button>
+      <button aria-pressed={showingLogHistory} class:chosen={showingLogHistory} onclick={()=>showLogs(true)}>Previous Log</button>
     </div>
-    <div class="log-list">{#each [...(showingLogHistory?diagnostics.history:diagnostics.entries)].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>{showingLogHistory?'No previous logs.':'No activity recorded in this session.'}</p>{/each}</div>
-    {#if showingLogHistory && diagnostics.history.length}
-      {#if confirmLogClear}<p>Delete all previous logs?</p>
-        <button onclick={()=>confirmLogClear=false}>Cancel</button><button onclick={()=>{clearLogHistory();confirmLogClear=false;}}>Delete previous logs</button>
-      {:else}<button onclick={()=>confirmLogClear=true}>Clear previous logs…</button>{/if}
-    {/if}
+    <div class="log-list">{#each [...(showingLogHistory?diagnostics.history:diagnostics.entries)].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>{showingLogHistory?'No log from the previous session.':'No activity recorded in this session.'}</p>{/each}</div>
   {:else if dialogType==='Empty trash'}<p>Remove {project.trash?.length} {project.trash?.length===1?'page':'pages'} from this project’s trash?</p>
     <button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
