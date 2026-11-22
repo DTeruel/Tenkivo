@@ -148,6 +148,8 @@ On Windows, double-click **Publish Tenkivo.cmd** from a clean `main` checkout. T
 
 Write commit subjects in English. A commit can include one or more `Release-Note:` trailers in English to supply user facing wording. The publisher uses these entries when present and the commit subject otherwise.
 
+After a successful push, press Enter to close the publisher and open the GitHub Actions run in your default browser. If GitHub has not returned the run yet, the publisher opens the workflow filtered by the release tag.
+
 To test an update, keep a single copy of the previous portable executable open in a writable folder. When the new release is live, click **Check for updates**, then **Update and restart**. A manual check that finds no newer version disables the button for one hour. When the hour ends, the app checks again automatically. The update icon shows a badge for a detected release, even after choosing **Later**.
 
 Publish a stable public GitHub Release at `DTeruel/GameDesignApp` with a semantic version tag (e.g. `v0.2.0`), release notes and the Windows x64 asset named `Tenkivo.exe`. To let pre-0.14 builds update, include the same binary as `GameDesignStudio.exe` on the transition release. The portable app checks the latest public release at startup, hourly while open, and on demand. It shows both versions and the release notes before downloading. The downloaded binary must match the SHA-256 digest from the GitHub release API. Updating requires write access to the executable's directory. Offline users can continue working.

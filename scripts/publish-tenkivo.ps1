@@ -39,8 +39,27 @@ function Get-ReleaseNotes {
     $changes | ForEach-Object { "- $($_.Trim())" }
 }
 
+function Find-ReleaseRun([string]$Repo, [string]$Tag, [string]$Commit) {
+    $api = "https://api.github.com/repos/$Repo/actions/workflows/portable-release.yml/runs?event=push&head_sha=$Commit&per_page=10"
+    for ($attempt = 0; $attempt -lt 6; $attempt++) {
+        try {
+            $response = Invoke-RestMethod -Uri $api -UseBasicParsing -TimeoutSec 4 -Headers @{
+                Accept = 'application/vnd.github+json'
+                'Cache-Control' = 'no-cache'
+            }
+        } catch {
+            return
+        }
+        $run = $response.workflow_runs | Where-Object {
+            $_.head_branch -ceq $Tag -and $_.head_sha -eq $Commit
+        } | Select-Object -First 1
+        if ($run.id -match '^[0-9]+$') { return "https://github.com/$Repo/actions/runs/$($run.id)" }
+        if ($attempt -lt 5) { Start-Sleep -Seconds 2 }
+    }
+}
+
 try {
-    $repo = 'DTeruel/GameDesignApp'
+    $repo = 'DTeruel/Tenkivo'
     $workflowUrl = "https://github.com/$repo/actions/workflows/portable-release.yml"
     $stableVersion = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
     $jsonVersion = '(?m)^\s*"version":\s*"([^"]+)"'
@@ -63,7 +82,7 @@ try {
         throw 'Commit or stash your changes before publishing. The working tree must be clean.'
     }
     $remote = Invoke-Git @('remote', 'get-url', '--push', 'origin')
-    if ($remote -notmatch '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)DTeruel/GameDesignApp(?:\.git)?/?$') {
+    if ($remote -notmatch '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)DTeruel/(Tenkivo|GameDesignApp)(?:\.git)?/?$') {
         throw "The origin push URL must point to $repo."
     }
     Invoke-Git @('ls-files', '--error-unmatch', '.github/workflows/portable-release.yml') | Out-Null
@@ -117,6 +136,7 @@ try {
     if (!$resume) {
         foreach ($edit in $edits) {
             $updated = $edit.Content.Remove($edit.Version.Index, $edit.Version.Length).Insert($edit.Version.Index, $next)
+            if ($edit.Path -eq 'src-tauri/Cargo.lock') { $updated = $updated.Replace("`r`n", "`n") }
             [IO.File]::WriteAllText($edit.FullPath, $updated)
         }
         $paths = @($edits | ForEach-Object Path)
@@ -131,9 +151,19 @@ try {
         }
     }
     Invoke-Git @('push', '--atomic', 'origin', 'HEAD:refs/heads/main', "refs/tags/${tag}:refs/tags/$tag") | Out-Host
-    Write-Host "GitHub is building Tenkivo $tag. Follow the build and publication here:"
-    Write-Host $workflowUrl
+    Write-Host "GitHub received $tag. Looking for its release workflow..."
+    $commit = Invoke-Git @('rev-parse', 'HEAD')
+    $trackingUrl = Find-ReleaseRun $repo $tag $commit
+    if (!$trackingUrl) {
+        $query = [uri]::EscapeDataString("branch:$tag")
+        $trackingUrl = "${workflowUrl}?query=$query"
+        Write-Host 'The exact run is not available yet. Opening the workflow filtered by tag.'
+    }
+    Write-Host $trackingUrl
     Write-Host "Release page once published: https://github.com/$repo/releases/tag/$tag"
+    $null = Read-Host 'Press Enter to close this window and open GitHub Actions'
+    try { Start-Process $trackingUrl }
+    catch { Write-Warning "The browser could not be opened. Open $trackingUrl to follow the release." ; exit 1 }
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
