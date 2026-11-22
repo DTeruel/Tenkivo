@@ -14,6 +14,13 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from '@tauri-apps/plugin-dialog';
   import { benchmark, defaultCatalog, editBody, item, page, sample, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
+  import {richNote} from './richNote';
+  import {toggleStyle,type NoteStyle} from './model';
+  const noteStyles:NoteStyle[]=['bold','italic','underline'];
+  function formatNote(style:NoteStyle){
+    if(!editing || !active || range?.id!==active.id || range.start===range.end)return;
+    toggleStyle(active,range.start,range.end,style);change();
+  }
   import { bounds, contains, resize, mapChild, enclosure, snap } from './geometry';
   import type { Box } from './geometry';
   import type { Department, Destination, Item, Kind, Page, TextLink, ProjectUser, PageVersion, BrushStroke, ObjectPort, Project } from './model';
@@ -526,11 +533,18 @@
     return o.link ?? (o.kind==='Page link' && o.target ? {pageId:o.target} : undefined);
   }
   function labelFor(to: Destination) {
+    if(to.url)return to.url;
     const p=project.pages.find(p=>p.id===to.pageId);
     if(!p)return 'Missing page';
     return to.itemId ? p.name+' / '+(p.items.find(o=>o.id===to.itemId)?.name ?? 'Missing object') : p.name;
   }
   async function follow(to: Destination) {
+    if(to.url){
+      const url=webAddress(to.url);
+      if(url)try{if(isTauri())await invoke('open_web',{url:url.href});else window.open(url.href,'_blank','noopener');}
+      catch(error){status=String(error);}
+      return;
+    }
     const p=project.pages.find(p=>p.id===to.pageId);
     const target=p?.items.find(o=>o.id===to.itemId);
     if(!p || (to.itemId && !target)){status='Link destination is missing.';return;}
@@ -544,11 +558,13 @@
     editBody(o,field.value,Math.min(beforeStart ?? Infinity,field.selectionStart));
     beforeStart=undefined;remember(o,field);change();
   }
+  let webTarget=$state(''), linkType=$state('project');
   function chooseLink(span?: {start:number;end:number}) {
     if(!editing || !active)return;
     draftRange=span && {start:span.start,end:span.end};
     const existing=span ? active.textLinks?.find(l=>l.start===span.start && l.end===span.end)?.to : objectLink(active);
-    targetPage=existing?.pageId ?? current;targetItem=existing?.itemId ?? '';
+    webTarget=existing?.url??'';linkType=webTarget?'web':'project';
+    targetPage=existing?.pageId || current;targetItem=existing?.itemId ?? '';
     ask('Internal link');
   }
   function storeLink(to?:Destination) {
@@ -778,7 +794,7 @@
     stroke=undefined;
   }
   function down(e:PointerEvent) {
-    if(e.button>1 || (e.button===0 && (e.target as HTMLElement).closest('input,textarea,button,audio,video,.drawing-toolbar')))return;
+    if(e.button>1 || (e.button===0 && (e.target as HTMLElement).closest('input,textarea,[contenteditable],button,audio,video,.drawing-toolbar')))return;
     focusArea='canvas';menu=undefined;selectedConnection='';
     if(drawingMode && editing && e.button===0){
       if(stroke || drag)return;
@@ -845,7 +861,7 @@
   }
   async function activate(o:Item,event:MouseEvent) {
     const target=event.target as Element;
-    if(target.closest('input,textarea,audio,video'))return;
+    if(target.closest('input,textarea,[contenteditable],audio,video'))return;
     if(editing && o.kind==='Note' && target.closest('.caption')){
       ids=[o.id];inline='';titleDraft=o.name;titleId=o.id;await tick();
       const field=viewport.querySelector<HTMLInputElement>('.note-title');field?.focus();field?.select();return;
@@ -855,7 +871,7 @@
     const to=objectLink(o);
     if(to && (!editing || o.kind==='Page link'))await follow(to);
     else if(!editing)status=readHint;
-    else if(editing && o.kind==='Note'){inline=o.id;await tick();viewport.querySelector('textarea')?.focus();}
+    else if(editing && o.kind==='Note'){inline=o.id;await tick();viewport.querySelector<HTMLElement>('[contenteditable]')?.focus();}
   }
   function add(kind:Kind, extra:Partial<Item>={}) {
     if(!editing)return;
@@ -991,11 +1007,16 @@
       return;
     }
     const key=e.key.toLowerCase();
+    if(editing && active?.kind==='Note' && (e.ctrlKey||e.metaKey) && (e.target as HTMLElement).closest('textarea,[contenteditable]') && range?.id===active.id && range.start!==range.end){
+      const style=({b:'bold',i:'italic',u:'underline'} as Record<string,NoteStyle>)[key];
+      if(style){e.preventDefault();formatNote(style);return;}
+      if(key==='k'){e.preventDefault();chooseLink(range);return;}
+    }
     if((e.ctrlKey || e.metaKey) && !e.altKey && (key==='z' || key==='y')){
       e.preventDefault();restoreEdit(key==='y' || e.shiftKey?1:-1);return;
     }
     if(e.key==='Escape'){commit();frameOnly='';menu=undefined;gesture=undefined;liveBox=undefined;drag=undefined;marquee=undefined;}
-    if((e.target as HTMLElement).closest('input,textarea,select') && e.key==='Delete')return;
+    if((e.target as HTMLElement).closest('input,textarea,select,[contenteditable]') && e.key==='Delete')return;
     if(!editing && e.key==='Delete' && (ids.length || focusArea==='tree')){e.preventDefault();status=readHint;return;}
     if((e.ctrlKey||e.metaKey) && e.shiftKey && ['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();travel(e.key==='ArrowLeft'?-1:1);return;}
     if(editing && e.key==='Delete' && !e.repeat){e.preventDefault();const focusedPage=(e.target as HTMLElement).closest<HTMLElement>('[data-page]')?.dataset.page;
@@ -1010,7 +1031,7 @@
       return;
     }
     if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){e.preventDefault();void saveFile();return;}
-    if((e.target as HTMLElement).closest('input,textarea,select') || e.ctrlKey || e.metaKey || e.altKey)return;
+    if((e.target as HTMLElement).closest('input,textarea,select,[contenteditable]') || e.ctrlKey || e.metaKey || e.altKey)return;
     if(e.key.toLowerCase()==='f')fit();
     if(e.key.toLowerCase()==='e' && !e.repeat)toggleEdit();
     if(e.key==='Escape'){inline='';ids=[];}
@@ -1191,11 +1212,11 @@
             {/if}
             {#if o.kind==='Note'}
               {#if inline===o.id}
-                <textarea aria-label="Edit note" use:fitText={{enabled:o.autoFit,size:o.size,text:o.body}} value={o.body}
-                  onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
-                  onselect={e=>remember(o,e.currentTarget)} oninput={e=>updateText(o,e.currentTarget)} onblur={()=>inline=''}></textarea>
+                <div class="body rich-editor" contenteditable="plaintext-only" role="textbox" aria-multiline="true" aria-label="Edit note" tabindex="0"
+                  use:richNote={{parts:textParts(o),select:(start,end)=>{range={id:o.id,start,end};},edit:(value,start)=>{editBody(o,value,start);change();}}}
+                  use:fitText={{enabled:o.autoFit,size:o.size,text:o.body}} onblur={()=>inline=''}></div>
               {:else}
-                <div class="body" use:fitText={{enabled:o.autoFit,size:o.size,text:o.body}}>{#each textParts(o) as part}{#if part.to}<button class="inline-link" title={labelFor(part.to)} onclick={()=>follow(part.to!)}>{part.text}</button>{:else}{part.text}{/if}{/each}</div>
+                <div class="body" use:fitText={{enabled:o.autoFit,size:o.size,text:o.body}}>{#each textParts(o) as part}<span style={part.css}>{#if part.to}<button class="inline-link" title={labelFor(part.to)} onclick={()=>follow(part.to!)}>{part.text}</button>{:else}{part.text}{/if}</span>{/each}</div>
               {/if}
             {/if}
             {#if destination}<button class="object-link" title={'Open '+labelFor(destination)} aria-label={'Open '+labelFor(destination)} onclick={()=>follow(destination)}>↗</button>{/if}
@@ -1259,7 +1280,10 @@
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
         onselect={e=>active && remember(active,e.currentTarget)} oninput={e=>active && updateText(active,e.currentTarget)}></textarea></label>
-        <button disabled={range?.id!==active.id || range.start===range.end} onclick={()=>chooseLink(range)}>Link selected text</button>
+        <div class="note-format" role="group" aria-label="Selected text formatting">
+          {#each noteStyles as style}<button title={style} aria-label={style} aria-pressed={!!range && active.styles?.some(s=>s.style===style && s.start<=range!.start && s.end>=range!.end) || false}
+            disabled={range?.id!==active.id || range.start===range.end} onmousedown={e=>e.preventDefault()} onclick={()=>formatNote(style)}>{#if style==='bold'}<b>B</b>{:else if style==='italic'}<i>I</i>{:else}<u>U</u>{/if}</button>{/each}
+          <button disabled={range?.id!==active.id || range.start===range.end} onmousedown={e=>e.preventDefault()} onclick={()=>chooseLink(range)}>Link…</button></div>
         {#each active.textLinks ?? [] as link}<button class="link-entry" title={labelFor(link.to)} onclick={()=>chooseLink(link)}>↗ {active.body.slice(link.start,link.end)}</button>{/each}
         <label class="check"><input type="checkbox" bind:checked={active.autoFit} onchange={change}/> Auto-fit text to box</label><label>Font size<input type="number" min="8" max="96" value={active.size} onchange={e=>{if(active){active.size=Math.max(8,Math.min(96,Number(e.currentTarget.value)||16));change();}}}/></label>{/if}
       <div class="dimensions">{#each ['w','h'] as key}<label>{key==='w'?'Width':'Height'}<input type="number" min="40" value={active[key as 'w'|'h']} onchange={e=>{if(active){active[key as 'w'|'h']=Math.max(40,Number(e.currentTarget.value)||40);change();}}}/></label>{/each}</div>
@@ -1361,13 +1385,16 @@
     {/if}
   </dialog>
   <dialog bind:this={dialog}>{#if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}{@render closePanel(()=>dialog.close())}{/if}<h2>{(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType}</h2>{#if dialogType==='Internal link' && active}
-    <form onsubmit={e=>{e.preventDefault();storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
+    <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
+      {#if draftRange}<label>Link to<select bind:value={linkType}><option value="project">Page or object</option><option value="web">Website</option></select></label>{/if}
+      {#if linkType==='web'}<label>Web address<input type="url" bind:value={webTarget} placeholder="https://"/></label>{:else}
       <label>Page<select bind:value={targetPage} onchange={()=>targetItem=''}>{#each project.pages as p}<option value={p.id}>{p.name}</option>{/each}</select></label>
       <label>Destination<select bind:value={targetItem}><option value="">Entire page</option>{#each choices as o}<option value={o.id}>{o.name} · {o.kind}</option>{/each}</select></label>
+      {/if}
       {#if draftRange ? active.textLinks?.some(l=>l.start<draftRange!.end && l.end>draftRange!.start) : objectLink(active)}
         <button type="button" onclick={()=>storeLink()}>Remove link</button>{/if}
-      <button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!project.pages.some(p=>p.id===targetPage) || (!!targetItem && !choices.some(o=>o.id===targetItem))}>Apply link</button>
+      <button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={linkType==='web'?!webAddress(webTarget):!project.pages.some(p=>p.id===targetPage) || (!!targetItem && !choices.some(o=>o.id===targetItem))}>Apply link</button>
     </form>
   {:else if dialogType==='Project settings' || dialogType==='New project'}
     {@const creating=dialogType==='New project'}
@@ -1441,7 +1468,7 @@
   {:else if dialogType==='Editor logs'}
     <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No activity recorded.</p>{/each}</div>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
-  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
+  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
   <input hidden bind:this={fileInput} type="file" accept=".gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>

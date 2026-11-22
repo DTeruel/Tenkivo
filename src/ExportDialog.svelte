@@ -6,7 +6,7 @@
   import {invoke} from './diagnostics.svelte';
   import {isTauri} from '@tauri-apps/api/core';
   import {save} from '@tauri-apps/plugin-dialog';
-  import {defaultCatalog,textParts,type Page,type Project,type Destination} from './model';
+  import {defaultCatalog,textParts,webAddress,type Page,type Project,type Destination} from './model';
   import {layout,width,height,type Sheet} from './print-layout';
   let {project,path,filters,pageTags,convert,ensureSaved,notify}:{
     project:Project;path:string;filters:string[];pageTags:Map<string,string[]>;convert:(paths:string[])=>Promise<void>;ensureSaved:()=>Promise<boolean>;notify:(message:string,destination?:string)=>void
@@ -25,7 +25,7 @@
     }
     return [...files];
   });
-  function sheetFor(d:Destination){const index=sheets.findIndex(s=>s.page?.id===d.pageId && (!d.itemId || s.items.some(o=>o.id===d.itemId)));return index<0?undefined:'#pdf-sheet-'+index;}
+  function sheetFor(d:Destination){if(d.url)return webAddress(d.url)?.href;const index=sheets.findIndex(s=>s.page?.id===d.pageId && (!d.itemId || s.items.some(o=>o.id===d.itemId)));return index<0?undefined:'#pdf-sheet-'+index;}
   export function show(p?:Page){
     single=p?.id??'';cursor=0;mode='pdf';tile=false;filtered=false;error='';shown=true;dialog.showModal();void loadImages();
   }
@@ -104,7 +104,7 @@
               {:else if o.kind==='Image' && o.showTitle===false}
                 {#if dest && sheetFor(dest)}<a class="pdf-image-link" href={sheetFor(dest)} aria-label={o.name}></a>{/if}
               {:else}<strong>{#if dest && sheetFor(dest)}<a href={sheetFor(dest)}>{o.name}</a>{:else if o.url}<a href={o.url}>{o.name}</a>{:else}{o.name}{/if}</strong>{/if}
-              {#if o.kind==='Note'}<div class="pdf-text" use:fitNote={{active:!!o.autoFit,size:o.size}} style:font-size={o.size+'px'}>{#each textParts(o) as part}{#if part.to && sheetFor(part.to)}<a href={sheetFor(part.to)}>{part.text}</a>{:else}{part.text}{/if}{/each}</div>
+              {#if o.kind==='Note'}<div class="pdf-text" use:fitNote={{active:!!o.autoFit,size:o.size}} style:font-size={o.size+'px'}>{#each textParts(o) as part}<span style={part.css}>{#if part.to && sheetFor(part.to)}<a href={sheetFor(part.to)}>{part.text}</a>{:else}{part.text}{/if}</span>{/each}</div>
               {:else if o.url}<small>{o.url}</small><small>{o.body}</small>
               {:else if o.kind==='Attachment'}<small>{o.attachment?.folder?'Folder':'File'} · {o.attachment?.path.split(/[\\/]/).at(-1)}</small>
               {:else if o.kind==='Image' && !src}<small>Image unavailable</small>{/if}

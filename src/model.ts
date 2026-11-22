@@ -19,7 +19,7 @@ export function videoId(url:string){
     (u.pathname==='/watch'?u.searchParams.get('v'):u.pathname.match(/^\/(?:embed|shorts|live)\/([^/]+)/)?.[1]):null;
   return id && /^[\w-]{11}$/.test(id)?id:undefined;
 }
-export interface Destination { pageId: string; itemId?: string }
+export interface Destination { pageId: string; itemId?: string; url?:string }
 export interface TextLink { start: number; end: number; to: Destination }
 export interface BrushStroke {
   color:string;
@@ -69,6 +69,7 @@ export function migrateLegacyDiagrams(project:Project){
   }
 }
 export interface Item {
+  styles?: {start:number;end:number;style:NoteStyle}[];
   drawing?:Drawing;
   id: string; kind: Kind; name: string; x: number; y: number;
   w: number; h: number; body: string; department: Department;
@@ -82,6 +83,9 @@ function validDestination(value: Destination) {
     (value.itemId === undefined || typeof value.itemId === 'string');
 }
 function validLinks(o: Item) {
+  if(o.styles!==undefined && (!Array.isArray(o.styles) || !o.styles.every(s=>s &&
+    ['bold','italic','underline'].includes(s.style) && Number.isInteger(s.start) && Number.isInteger(s.end) &&
+    s.start>=0 && s.end>s.start && s.end<=o.body.length)))return false;
   if (o.link !== undefined && !validDestination(o.link)) return false;
   if (o.textLinks === undefined) return true;
   return o.kind === 'Note' && Array.isArray(o.textLinks) && o.textLinks.every((link, index, links) =>
@@ -89,15 +93,30 @@ function validLinks(o: Item) {
     link.start >= (index ? links[index-1].end : 0) && link.start < link.end &&
     link.end <= o.body.length && validDestination(link.to));
 }
-export function textParts(o: Item) {
-  const parts: {text: string; to?: Destination}[] = [];
-  let cursor = 0;
-  for (const link of o.textLinks ?? []) {
-    parts.push({text:o.body.slice(cursor,link.start)}, {text:o.body.slice(link.start,link.end),to:link.to});
-    cursor = link.end;
+export type NoteStyle='bold'|'italic'|'underline';
+export function toggleStyle(o:Item,start:number,end:number,style:NoteStyle){
+  if(start>=end)return;
+  const spans=o.styles??[];
+  const contained=spans.some(s=>s.style===style && s.start<=start && s.end>=end);
+  const next=spans.filter(s=>s.style!==style);
+  for(const s of spans.filter(s=>s.style===style)){
+    if(s.end<start || s.start>end){next.push(s);continue;}
+    if(contained){
+      if(s.start<start)next.push({...s,end:start});
+      if(s.end>end)next.push({...s,start:end});
+    }else{start=Math.min(start,s.start);end=Math.max(end,s.end);}
   }
-  parts.push({text:o.body.slice(cursor)});
-  return parts;
+  if(!contained)next.push({start,end,style});
+  o.styles=next.sort((a,b)=>a.start-b.start);
+}
+export function textParts(o:Item){
+  const spans=o.styles??[],links=o.textLinks??[];
+  const cuts=[...new Set([0,o.body.length,...[...spans,...links].flatMap(s=>[s.start,s.end])])].sort((a,b)=>a-b);
+  return cuts.slice(1).map((end,i)=>{
+    const start=cuts[i],styles=spans.filter(s=>s.start<=start && s.end>=end).map(s=>s.style);
+    const css=(styles.includes('bold')?'font-weight:bold;':'')+(styles.includes('italic')?'font-style:italic;':'')+(styles.includes('underline')?'text-decoration:underline;':'');
+    return {text:o.body.slice(start,end),css,to:links.find(s=>s.start<=start && s.end>=end)?.to};
+  });
 }
 
 // Textarea offsets and string slices both use UTF-16 code units.
@@ -107,6 +126,12 @@ export function editBody(o: Item, value: string, selectionStart?: number) {
   while (start < Math.min(selectionStart ?? Infinity, oldEnd, newEnd) && old[start] === value[start]) start++;
   while (oldEnd > start && newEnd > start && old[oldEnd-1] === value[newEnd-1]) {oldEnd--; newEnd--;}
   const delta = newEnd-oldEnd;
+  o.styles=o.styles?.flatMap(s=>{
+    if(s.end<start || (s.end===start && oldEnd!==start))return [s];
+    if(s.start>=oldEnd)return [{...s,start:s.start+delta,end:s.end+delta}];
+    const left=Math.min(s.start,start),right=s.end>=oldEnd?s.end+delta:newEnd;
+    return right>left?[{...s,start:left,end:right}]:[];
+  });
   o.textLinks = o.textLinks?.flatMap(link => {
     if (link.end <= start) return [link];
     if (link.start >= oldEnd) return [{...link,start:link.start+delta,end:link.end+delta}];
