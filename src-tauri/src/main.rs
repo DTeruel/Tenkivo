@@ -151,6 +151,33 @@ fn main() {
         }
     }
     tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(windows)]
+            {
+                use tauri::Manager;
+                use webview2_com::AcceleratorKeyPressedEventHandler;
+                use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_J, VK_MENU, VK_SHIFT};
+                let window = app.get_webview_window("main").ok_or("Missing main window")?;
+                window.with_webview(|view| unsafe {
+                    let handler = AcceleratorKeyPressedEventHandler::create(Box::new(|_, args| {
+                        if let Some(args) = args {
+                            let mut key = 0;
+                            args.VirtualKey(&mut key)?;
+                            if key == u32::from(VK_J.0) && GetKeyState(VK_CONTROL.0.into()) < 0
+                                && GetKeyState(VK_SHIFT.0.into()) >= 0 && GetKeyState(VK_MENU.0.into()) >= 0 {
+                                args.SetHandled(true)?;
+                            }
+                        }
+                        Ok(())
+                    }));
+                    let mut token = 0;
+                    if let Err(error) = view.controller().add_AcceleratorKeyPressed(&handler, &mut token) {
+                        eprintln!("Could not register the downloads shortcut handler: {error}");
+                    }
+                })?;
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             open_project,
