@@ -741,28 +741,32 @@
     try{const ids:unknown=JSON.parse(localStorage.getItem('studio-recent-editors')??'[]');return Array.isArray(ids)?ids.filter(id=>typeof id==='string'):[];}
     catch{return [];}
   }
+  function lastLocalEditor(users:ProjectUser[]){
+    const saved=path?localStorage.getItem('studio-project-editor:'+path):null;
+    if(saved)return users.find(user=>user.id===saved);
+    // Older versions only remembered a shared list. Local profile IDs can be matched to this project.
+    return recentEditors()
+      .filter(id=>!path || project.users?.some(user=>user.id===id))
+      .map(id=>users.find(user=>user.id===id)).find(Boolean);
+  }
   function applyProjectOpeningMode(){
     if(!openingEditPending || restoringAccount)return;
     openingEditPending=false;
     if(welcome || editing || projectOpeningMode!=='edit')return;
-    if(!onlineProject && !onlineIdentity){
-      const users=project.users??[];
-      const last=recentEditors().find(id=>users.some(user=>user.id===id));
-      const knownEditor=last??(users.length===1?users[0].id:undefined);
-      if(knownEditor){editorId=knownEditor;editing=true;return;}
-    }
     selectEditor(true);
   }
   function selectEditor(automatic=false){
     if(onlineProject && !onlineIdentity){showGitHubAccount();return;}
     if(onlineProject && !onlineProject.writable){status='Reload the project after signing in with write access.';return;}
-    if(onlineIdentity && (onlineProject || automatic)){
-      editorId=onlineIdentity.id;editing=true;
+    const users=[...(onlineIdentity?[onlineIdentity]:[]),...project.users??[]];
+    const last=onlineProject?undefined:lastLocalEditor(users);
+    const automaticEditor=last??onlineIdentity??(users.length===1?users[0]:undefined);
+    const preferred=onlineProject?onlineIdentity:automatic?automaticEditor:undefined;
+    if(preferred){
+      editorId=preferred.id;editing=true;
       if(status===readHint)status='';
       return;
     }
-    const users=[...(onlineIdentity?[onlineIdentity]:[]),...project.users??[]];
-    const last=recentEditors().map(id=>users.find(u=>u.id===id)).find(Boolean);
     pickerUsers=last?[last,...users.filter(u=>u.id!==last.id)]:[...users];
     selectedUser=pickerUsers[0]?.id??'';registering=!users.length;userName='';userIcon=userIcons[0];ask('Select editing user');
     if(!registering)void tick().then(()=>{
@@ -784,6 +788,7 @@
     }
     if(selectedUser!==onlineIdentity?.id && !project.users?.some(u=>u.id===selectedUser))return;
     editorId=selectedUser;editing=true;
+    if(path && !onlineProject)localStorage.setItem('studio-project-editor:'+path,editorId);
     localStorage.setItem('studio-recent-editors',JSON.stringify([editorId,...recentEditors().filter(id=>id!==editorId)]));
     if(status===readHint)status='';
     dialog.close();
