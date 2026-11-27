@@ -348,6 +348,16 @@
     const last=recentEditors().map(id=>users.find(u=>u.id===id)).find(Boolean);
     pickerUsers=last?[last,...users.filter(u=>u.id!==last.id)]:[...users];
     selectedUser=pickerUsers[0]?.id??'';registering=!users.length;userName='';userIcon=userIcons[0];ask('Select editing user');
+    if(!registering)void tick().then(()=>{
+      if(dialog.open && dialogType==='Select editing user' && !registering)
+        dialog.querySelector<HTMLSelectElement>('.user-picker select')?.focus();
+    });
+  }
+  function confirmSelectedUser(e:KeyboardEvent){
+    if(registering || !selectedUser || e.key!=='Enter' || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey)return;
+    if(!(e.target instanceof HTMLSelectElement))return;
+    e.preventDefault();
+    if(!e.repeat)enterEditing();
   }
   function enterEditing(){
     if(registering){
@@ -1447,7 +1457,7 @@
         {#if userName.trim() && !validRegistration}<p role="alert">This user name is already in use.</p>{/if}
         {#if pickerUsers.length}<button type="button" onclick={()=>registering=false}>Choose existing user</button>{/if}
       {:else}
-        <label>User<select bind:value={selectedUser}>{#each pickerUsers as u}<option value={u.id}>{u.icon} {u.name}</option>{/each}</select></label>
+        <label>User<select bind:value={selectedUser} onkeydown={confirmSelectedUser}>{#each pickerUsers as u}<option value={u.id}>{u.icon} {u.name}</option>{/each}</select></label>
         <button type="button" onclick={()=>registering=true}>Add New User</button>
       {/if}
       <div><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={registering?!validRegistration:!selectedUser}>Start editing</button></div>
