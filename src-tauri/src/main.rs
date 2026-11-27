@@ -193,6 +193,7 @@ fn main() {
         })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            online::github_client_id,
             online::online_sign_in,
             online::online_poll,
             online::online_sign_out,

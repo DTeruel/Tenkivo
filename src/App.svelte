@@ -231,9 +231,15 @@
   let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
   let onlineRepo=$state(localStorage.getItem('studio-online-repo')??'');
   let clientId=$state(localStorage.getItem('studio-github-client-id')??'');
+  let configuredClientId=$state('');
   let onlineError=$state(''),deviceCode=$state(''),onlineWorking=$state(false);
   let signInTimer:ReturnType<typeof setTimeout>|undefined, signInAttempt=0;
   const onlineIdentity=$derived(account?{id:'github:'+account.id,name:account.login,icon:'🐙'}:undefined);
+
+  function showGitHubAccount(){
+    onlineError='';
+    ask('GitHub account');
+  }
 
   function showOnline(){
     onlineRepo=onlineProject?.repo??onlineRepo;
@@ -241,13 +247,14 @@
     ask('Online project');
   }
   async function requestSignIn(){
+    const id=configuredClientId || clientId.trim();
     const attempt=++signInAttempt;
     clearTimeout(signInTimer);
     onlineWorking=true;onlineError='';deviceCode='';
     try{
-      const prompt=await invoke<{user_code:string;interval:number}>('online_sign_in',{clientId});
+      const prompt=await invoke<{user_code:string;interval:number}>('online_sign_in',{clientId:id});
       if(attempt!==signInAttempt)return;
-      localStorage.setItem('studio-github-client-id',clientId.trim());
+      if(!configuredClientId)localStorage.setItem('studio-github-client-id',id);
       deviceCode=prompt.user_code;
       signInTimer=setTimeout(()=>void pollSignIn(attempt),prompt.interval*1000);
     }catch(error){if(attempt===signInAttempt)onlineError=String(error);}
@@ -260,7 +267,9 @@
       if(result.status==='pending'){
         signInTimer=setTimeout(()=>void pollSignIn(attempt),result.interval*1000);
       }else{
+        commit();typingField=null;
         account=result.account;deviceCode='';
+        if(editing && !onlineProject && onlineIdentity)editorId=onlineIdentity.id;
       }
     }catch(error){if(attempt===signInAttempt){deviceCode='';onlineError=String(error);}}
   }
@@ -269,8 +278,9 @@
     if(onlineProject && dirty){onlineError='Save your changes or export a local copy before signing out.';return;}
     ++signInAttempt;clearTimeout(signInTimer);deviceCode='';onlineError='';
     try{
-      await invoke('online_sign_out');account=undefined;
-      if(onlineProject && editing)toggleEdit();
+      await invoke('online_sign_out');
+      if(editing && editorId===onlineIdentity?.id){commit();typingField=null;toggleEdit();}
+      account=undefined;
       if(onlineProject)onlineProject={...onlineProject,writable:false};
     }catch(error){onlineError=String(error);}
   }
@@ -428,7 +438,7 @@
   let draftUsers=$state<ProjectUser[]>([]), editorId=$state('');
   let pickerUsers=$state<ProjectUser[]>([]), selectedUser=$state(''),registering=$state(false);
   let userName=$state(''),userIcon=$state(userIcons[0]);
-  let editor=$derived(onlineProject?onlineIdentity:project.users?.find(u=>u.id===editorId));
+  let editor=$derived(editorId===onlineIdentity?.id?onlineIdentity:project.users?.find(u=>u.id===editorId));
   function normalizeName(value:string){return value.trim().toLowerCase();}
   let validUsers=$derived(draftUsers.every(u=>u.name.trim()) && new Set(draftUsers.map(u=>normalizeName(u.name))).size===draftUsers.length);
   let validRegistration=$derived(userName.trim()!=='' && !project.users?.some(u=>normalizeName(u.name)===normalizeName(userName)));
@@ -437,9 +447,9 @@
     catch{return [];}
   }
   function selectEditor(){
-    if(onlineProject){
-      if(!onlineIdentity){showOnline();return;}
-      if(!onlineProject.writable){status='Reload the project after signing in with write access.';return;}
+    if(onlineProject && !onlineIdentity){showGitHubAccount();return;}
+    if(onlineProject && !onlineProject.writable){status='Reload the project after signing in with write access.';return;}
+    if(onlineIdentity){
       editorId=onlineIdentity.id;editing=true;
       if(status===readHint)status='';
       return;
@@ -797,7 +807,7 @@
     const pageHistory=project.pageHistory;
     const {pageHistory:_,...editable}=entry.doc;
     project={...structuredClone(editable),pageHistory};revision=next;
-    if(!onlineProject && !project.users?.some(u=>u.id===editorId)){stopDrawing();editing=false;editorId='';}
+    if(editorId!==onlineIdentity?.id && !project.users?.some(u=>u.id===editorId)){stopDrawing();editing=false;editorId='';}
     current=project.pages.find(p=>p.id===affectedPage)?.id??project.pages.find(p=>p.id===entry.page)?.id??project.pages[0].id;
     ids=ids.filter(id=>board.items.some(o=>o.id===id));
     filters=filters.filter(d=>departments.includes(d));
@@ -1181,6 +1191,7 @@
     }catch(err){status=String(err);}finally{busy=false;}
   }
   onMount(()=>{
+    if(isTauri())void invoke<string|null>('github_client_id').then(id=>{configuredClientId=id??'';}).catch(()=>{});
     if(isTauri())void getVersion().then(version=>{
       appVersion=version;
       recordActivity('Startup','Tenkivo '+version+' started.');
@@ -1227,6 +1238,12 @@
   <button aria-label="Editor logs" title="Editor logs" onclick={()=>showLogs()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
 {/snippet}
 
+{#snippet gitHubAccountButton()}
+  {#if isTauri()}
+    <button title="GitHub account" onclick={showGitHubAccount}>{account?'@'+account.login:'Sign in with GitHub'}</button>
+  {/if}
+{/snippet}
+
 {#snippet closePanel(close:()=>void)}
   <button type="button" class="close-panel" title="Close" aria-label="Close" onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 {/snippet}
@@ -1253,7 +1270,7 @@
 <div class="studio" data-theme={theme} class:launcher={welcome}>
   {#if welcome}
     <main class="welcome">
-      <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions"><button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}{@render logsButton()}</div></div>
+      <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions">{@render gitHubAccountButton()}<button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}{@render logsButton()}</div></div>
       <div class="welcome-actions"><button disabled={launching} onclick={newProject}>New project…</button><button disabled={launching} onclick={openFile}>Open project…</button>{#if isTauri()}<button disabled={launching} onclick={showOnline}>Online project…</button>{/if}</div>
       {#if status}<p role="status">{status}</p>{/if}
       <h2>Recent projects</h2>
@@ -1282,6 +1299,7 @@
         <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export…</button>
       </div></details><button disabled={busy} title={dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button></nav>
     <div class="app-actions">
+      {@render gitHubAccountButton()}
       <button aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onclick={()=>ask('Keyboard shortcuts')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M8 15h8"/></svg></button>
       <button class="settings-button" aria-label="Settings" title="Settings" onclick={()=>settings.showModal()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.3-2 .9-2.1-.8-2 3.4L5 10.4v2.8l-1.7 1.6 2 3.5 2.2-.8 2 .9.5 2.2h4l.6-2.2 2-.9 2.1.8 2-3.5-1.7-1.6v-2.8l1.7-1.6-2-3.4-2.2.8-2-.9L14 3z"/><circle cx="12" cy="12" r="3"/></svg></button>
       {@render updatesButton()}
@@ -1532,9 +1550,14 @@
         <button type="button" onclick={()=>storeLink()}>Remove link</button>{/if}
       <button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={linkType==='web'?!webAddress(webTarget):!project.pages.some(p=>p.id===targetPage) || (!!targetItem && !choices.some(o=>o.id===targetItem))}>Apply link</button>
     </form>
-  {:else if dialogType==='Online project'}
+  {:else if dialogType==='Online project' || dialogType==='GitHub account'}
+    {@const managingAccount=dialogType==='GitHub account'}
     {#if account}
       <p>Signed in as <strong>@{account.login}</strong>.</p>
+      {#if managingAccount}
+        <p>Tenkivo uses this account as your editing identity.</p>
+        <button disabled={busy} onclick={signOut}>Sign out</button>
+      {:else}
       {#if onlineProject}<p>Current project · {onlineProject.repo} ({onlineProject.branch})</p>{/if}
       <label>Private repository<input placeholder="owner/repository" bind:value={onlineRepo} disabled={onlineWorking}/></label>
       <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>
@@ -1543,7 +1566,7 @@
       {:else if onlineProject}
         <button disabled={busy} onclick={()=>accessOnline('reload')}>Reload from GitHub</button>
       {/if}
-      <button disabled={busy} onclick={signOut}>Sign out</button>
+      {/if}
     {:else if deviceCode}
       <p>Enter this code on GitHub to connect your account.</p>
       <p><strong>{deviceCode}</strong></p>
@@ -1551,13 +1574,15 @@
       <button onclick={signOut}>Cancel sign-in</button>
     {:else}
       <form onsubmit={e=>{e.preventDefault();void requestSignIn();}}>
-        <label>GitHub App Client ID<input required bind:value={clientId} disabled={onlineWorking}/></label>
-        <button disabled={onlineWorking || !clientId.trim()}>Sign in with GitHub</button>
+        {#if !configuredClientId}
+          <label>GitHub App public Client ID<input required bind:value={clientId} disabled={onlineWorking}/></label>
+        {/if}
+        <button disabled={onlineWorking || !(configuredClientId || clientId.trim())}>Sign in with GitHub</button>
       </form>
     {/if}
     {#if onlineError}<p role="alert">{onlineError}</p>{/if}
     <div>
-      {#if onlineProject}<button disabled={busy} onclick={downloadOnlineCopy}>Save a local copy…</button>{/if}
+      {#if !managingAccount && onlineProject}<button disabled={busy} onclick={downloadOnlineCopy}>Save a local copy…</button>{/if}
       <button disabled={busy || onlineWorking} onclick={()=>dialog.close()}>Close</button>
     </div>
   {:else if dialogType==='Project settings' || dialogType==='New project'}

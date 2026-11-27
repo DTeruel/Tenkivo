@@ -51,6 +51,8 @@ jobs:
           package-manager-cache: false
 
       - name: Build and stage Tenkivo.exe
+        env:
+          TENKIVO_GITHUB_CLIENT_ID: ${{ vars.TENKIVO_GITHUB_CLIENT_ID }}
         run: |
           rustup update stable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

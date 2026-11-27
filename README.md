@@ -150,8 +150,10 @@ Tenkivo can keep a shared project in a private GitHub repository. Each participa
 
 1. Create a [GitHub App](https://github.com/settings/apps/new). Enable **Device Flow**, disable the webhook if you do not need one, and set the repository permission **Contents** to **Read and write**. Copy the app's public **Client ID**. A client secret or private key is unnecessary.
 2. Create a dedicated **private** repository for the project and initialize it with a README. Install the GitHub App on that repository. Invite participants through GitHub and grant write access to anyone who should edit.
-3. Open a local project in Tenkivo. Select **File → Online project…**, enter the public Client ID, and sign in using the code and verification page. Enter the repository as `owner/name` and select **Publish a copy**.
-4. Open the shared copy with **Open from GitHub**. This reads `project.tkv` from the repository's default branch. Other participants use the same Client ID and repository name. The desktop session keeps the GitHub access token in memory, so signing in again is required after restarting Tenkivo.
+3. Select **Sign in with GitHub** on the welcome screen or in the editor's top bar. Enter the public Client ID if prompted and sign in using the code and verification page. Tenkivo uses that account when you enter Edit mode for any project. Local projects can also be edited using a local profile when signed out.
+4. Open a local project, select **File → Online project…**, enter the private repository as `owner/name` and select **Publish a copy**. Open the shared copy with **Open from GitHub**. This reads `project.tkv` from the repository's default branch.
+
+Set the GitHub Actions repository variable `TENKIVO_GITHUB_CLIENT_ID` to the public Client ID to embed it in release builds. Developers can set the same environment variable before building locally. The desktop session keeps the GitHub access token in memory, so signing in again is required after restarting Tenkivo.
 
 Use **Save** to commit changes to GitHub. If another participant has already saved, GitHub can reject the outdated revision. Use **Save a local copy…** to preserve your edits and **Reload from GitHub** to load the latest revision. This version has manual reload and save, with no live co-editing or merge. Online projects support embedded images and web links within a 1 MiB project document, but do not support local file or folder attachments.
 
