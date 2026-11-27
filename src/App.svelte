@@ -1575,7 +1575,11 @@
     {:else}
       <form onsubmit={e=>{e.preventDefault();void requestSignIn();}}>
         {#if !configuredClientId}
-          <label>GitHub App public Client ID<input required bind:value={clientId} disabled={onlineWorking}/></label>
+          <p>Set up a GitHub App with Device Flow, then copy its public Client ID here. GitHub will ask you to sign in in your browser.</p>
+          <label>Public Client ID from GitHub App settings
+            <input required bind:value={clientId} disabled={onlineWorking} placeholder="GitHub App Client ID" autocomplete="off" spellcheck="false"/>
+          </label>
+          <button type="button" onclick={()=>void invoke('open_web',{url:'https://github.com/settings/apps'}).catch(error=>onlineError=String(error))}>Open GitHub App settings ↗</button>
         {/if}
         <button disabled={onlineWorking || !(configuredClientId || clientId.trim())}>Sign in with GitHub</button>
       </form>

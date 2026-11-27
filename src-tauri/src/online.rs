@@ -105,13 +105,13 @@ pub async fn online_sign_in(
     client_id: String,
 ) -> Result<DevicePrompt, String> {
     let client_id = client_id.trim().to_string();
-    if client_id.is_empty()
+    if client_id.len() < 16
         || client_id.len() > 100
         || !client_id
             .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'-'))
     {
-        return Err("Enter the public Client ID of your GitHub App.".into());
+        return Err("Copy the Client ID from your GitHub App settings. Your GitHub username cannot be used here.".into());
     }
     let generation = {
         let mut session = state.0.lock().unwrap();
@@ -119,15 +119,29 @@ pub async fn online_sign_in(
         session.pending = None;
         session.generation
     };
-    let response = checked(
-        client()?
-            .post("https://github.com/login/device/code")
-            .header("Accept", "application/json")
-            .form(&[("client_id", &client_id)])
-            .send()
-            .await
-            .map_err(connection_error)?,
-    )?;
+    let response = client()?
+        .post("https://github.com/login/device/code")
+        .header("Accept", "application/json")
+        .query(&[("client_id", &client_id)])
+        .send()
+        .await
+        .map_err(connection_error)?;
+    let status = response.status();
+    if matches!(
+        status,
+        StatusCode::BAD_REQUEST
+            | StatusCode::UNAUTHORIZED
+            | StatusCode::NOT_FOUND
+            | StatusCode::UNPROCESSABLE_ENTITY
+    ) {
+        return Err("GitHub did not recognize this sign-in configuration. Check the GitHub App's Client ID and enable Device Flow.".into());
+    }
+    if !status.is_success() {
+        return Err(format!(
+            "GitHub could not start device sign-in (HTTP {}). Check Device Flow and try again.",
+            status.as_u16()
+        ));
+    }
     let device: DeviceResponse = response.json().await.map_err(|_| {
         "GitHub could not start sign-in. Check the Client ID and enable Device Flow for the GitHub App.".to_string()
     })?;
