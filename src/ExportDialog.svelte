@@ -143,6 +143,6 @@
   {/if}
   {#if mode==='zip' && [...project.pages,...project.trash??[],...(project.pageHistory??[]).map(v=>v.page)].some(p=>p.items.some(o=>o.attachment?.path.toLowerCase().endsWith('.lnk')))}<p>Windows shortcuts keep their original targets when copied.</p>{/if}
   {#if error || plan.error}<p role="alert">{error || plan.error}</p>{/if}
-  <div class="export-actions"><button disabled={busy} onclick={close}>Cancel</button><button disabled={busy || (mode==='pdf' && (loading || !sheets.length))} onclick={run}>{busy?'Working…':mode==='zip'?'Export ZIP':'Export PDF'}</button></div>
+  <div class="dialog-actions export-actions"><button disabled={busy} onclick={close}>Cancel</button><button disabled={busy || (mode==='pdf' && (loading || !sheets.length))} onclick={run}>{busy?'Working…':mode==='zip'?'Export ZIP':'Export PDF'}</button></div>
 </dialog>
 <div class="print-root" bind:this={printRoot}>{#if shown && mode==='pdf'}{#each sheets as s,n}{@render sheet(s,n,true)}{/each}{/if}</div>

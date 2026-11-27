@@ -81,8 +81,10 @@
   </div>
   {#if removal}
     <p>{removal.kind==='member'?'Remove direct access for @'+removal.member.login+'? Access through organization teams or roles may remain.':'Cancel this GitHub invitation?'}</p>
-    <button disabled={working} onclick={()=>removal=undefined}>Back</button>
-    <button disabled={working} onclick={remove}>{removal.kind==='member'?'Remove direct access':'Cancel invitation'}</button>
+    <div class="dialog-actions">
+      <button disabled={working} onclick={()=>removal=undefined}>Back</button>
+      <button disabled={working} onclick={remove}>{removal.kind==='member'?'Remove direct access':'Cancel invitation'}</button>
+    </div>
   {:else}
     <form onsubmit={verify}>
       <label>GitHub username<input required placeholder="@username" autocomplete="off" spellcheck="false"
@@ -105,7 +107,7 @@
     {/if}
   {/if}
 {/if}
-<div class="settings-footer">
+<div class="dialog-actions settings-footer">
   <button disabled={working} onclick={()=>run(fetchAccess)}>Refresh</button>
   <button disabled={working} class="settings-back" onclick={onback}>Back</button>
 </div>

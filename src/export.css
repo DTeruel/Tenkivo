@@ -12,14 +12,13 @@
 .export-dialog h2 {margin:0 0 16px}
 .export-dialog .export-check {display:flex; align-items:center}
 .export-check input {width:auto}
-.export-dialog li,.preview-nav,.export-actions {display:flex;align-items:center;gap:10px}
+.export-dialog li,.preview-nav {display:flex;align-items:center;gap:10px}
 .export-dialog ul {padding:0;max-height:35vh;overflow:auto}
 .export-dialog li {padding:8px 0;border-bottom:1px solid var(--line);justify-content:space-between}
 .export-dialog li div {min-width:0;overflow-wrap:anywhere}
 .export-dialog li button {flex-shrink:0}
 .export-dialog li small {display:block}
 .export-dialog [role=alert]{color:#d66055}
-.export-actions {justify-content:flex-end;margin-top:16px}
 .export-actions button:last-child {background:CanvasText;color:Canvas}
 .preview-nav {justify-content:space-between;margin:8px 0}
 .pdf-preview {overflow:auto;background:#b6b8bc;padding:5px;text-align:center}

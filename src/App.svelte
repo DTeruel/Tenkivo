@@ -1971,13 +1971,16 @@
     <h2>Add to canvas</h2><p>{incoming.length===1?incoming[0]:incoming.length+' items selected'}</p>
     <p>Copy files and folders beside the project, or keep a link to their original location.</p>
     {#if importError}<p role="alert">{importError}</p>{/if}
-    <button disabled={copying} onclick={()=>fileDialog.close()}>Cancel</button>
-    <button disabled={copying} onclick={()=>attach(false)}>Link original</button><button disabled={copying} onclick={()=>attach(true)}>{copying?'Adding…':'Copy to project'}</button>
+    <div class="dialog-actions">
+      <button disabled={copying} onclick={()=>fileDialog.close()}>Cancel</button>
+      <button disabled={copying} onclick={()=>attach(false)}>Link original</button>
+      <button disabled={copying} onclick={()=>attach(true)}>{copying?'Adding…':'Copy to project'}</button>
+    </div>
   </dialog>
   <dialog bind:this={unsavedDialog} aria-labelledby="unsaved-dialog-title" oncancel={event=>{event.preventDefault();finishUnsaved('cancel');}}>
     <h2 id="unsaved-dialog-title">Save changes before {unsavedLabels[unsavedAction].action}?</h2>
     <p>Save your changes to “{project.name}”, or discard them to continue.</p>
-    <div class="row">
+    <div class="dialog-actions unsaved-actions">
       <button onclick={()=>finishUnsaved('cancel')}>Cancel</button>
       <button onclick={()=>finishUnsaved('discard')}>Don’t Save</button>
       <button onclick={()=>finishUnsaved('save')}>{unsavedLabels[unsavedAction].save}</button>
@@ -2003,9 +2006,11 @@
     {#if release}<h2>Update available</h2><p>Current version {release.current} · New version {release.version}</p>
       <p style="white-space:pre-wrap;max-height:40vh;overflow:auto">{release.notes}</p>
       {#if updateError}<p role="alert">{updateError}</p>{/if}
-      <button disabled={installing} onclick={()=>updateDialog.close()}>Later</button>
-      {#if release.portable}<button disabled={installing} onclick={applyUpdate}>{installing?'Updating…':'Update and restart'}</button>
-      {:else}<p>Automatic replacement is available in the Windows portable build.</p>{/if}
+      {#if !release.portable}<p>Automatic replacement is available in the Windows portable build.</p>{/if}
+      <div class="dialog-actions">
+        <button disabled={installing} onclick={()=>updateDialog.close()}>Later</button>
+        {#if release.portable}<button disabled={installing} onclick={applyUpdate}>{installing?'Updating…':'Update and restart'}</button>{/if}
+      </div>
     {/if}
   </dialog>
   <dialog bind:this={dialog} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
@@ -2022,9 +2027,13 @@
       <label>Page<select bind:value={targetPage} onchange={()=>targetItem=''}>{#each project.pages as p}<option value={p.id}>{p.name}</option>{/each}</select></label>
       <label>Destination<select bind:value={targetItem}><option value="">Entire page</option>{#each choices as o}<option value={o.id}>{o.name} · {o.kind}</option>{/each}</select></label>
       {/if}
-      {#if draftRange ? active.textLinks?.some(l=>l.start<draftRange!.end && l.end>draftRange!.start) : objectLink(active)}
-        <button type="button" onclick={()=>storeLink()}>Remove link</button>{/if}
-      <button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={linkType==='web'?!webAddress(webTarget):!project.pages.some(p=>p.id===targetPage) || (!!targetItem && !choices.some(o=>o.id===targetItem))}>Apply link</button>
+      <div class="dialog-actions">
+        {#if draftRange ? active.textLinks?.some(l=>l.start<draftRange!.end && l.end>draftRange!.start) : objectLink(active)}
+          <button type="button" onclick={()=>storeLink()}>Remove link</button>
+        {/if}
+        <button type="button" onclick={()=>dialog.close()}>Cancel</button>
+        <button disabled={linkType==='web'?!webAddress(webTarget):!project.pages.some(p=>p.id===targetPage) || (!!targetItem && !choices.some(o=>o.id===targetItem))}>Apply link</button>
+      </div>
     </form>
   {:else if dialogType==='Online project' || dialogType==='GitHub account'}
     {@const managingAccount=dialogType==='GitHub account'}
@@ -2032,7 +2041,7 @@
       <p>Signed in as <strong>@{account.login}</strong>.</p>
       {#if managingAccount}
         <p>Tenkivo uses this account as your editing identity.</p>
-        <button disabled={busy} onclick={signOut}>Sign out</button>
+        <div class="dialog-actions"><button disabled={busy} onclick={signOut}>Sign out</button></div>
       {:else}
       {#if onlineMode==='open'}
         {@render discoverableProjects()}
@@ -2041,7 +2050,7 @@
             <summary>Open by repository name…</summary>
             <form onsubmit={e=>{e.preventDefault();void accessOnline('open');}}>
               <label>Repository name<input required placeholder="owner/repository" bind:value={onlineRepo} disabled={busy}/></label>
-              <button disabled={busy || !onlineRepo.trim()}>Open repository</button>
+              <div class="dialog-actions"><button disabled={busy || !onlineRepo.trim()}>Open repository</button></div>
             </form>
           </details>
         {/if}
@@ -2054,14 +2063,14 @@
             <details><summary>Tags</summary><fieldset disabled={busy}>{@render tagEditor()}</fieldset></details>
             {#if invalidDraftTags()}<p>Enter a name for each tag.</p>{/if}
           {/if}
-          <button disabled={busy || !onlineRepo.trim() || (onlineMode==='create' && (!onlineNewName.trim() || invalidDraftTags()))}>{onlineMode==='create'?'Create online project':'Save as Online'}</button>
+          <div class="dialog-actions"><button disabled={busy || !onlineRepo.trim() || (onlineMode==='create' && (!onlineNewName.trim() || invalidDraftTags()))}>{onlineMode==='create'?'Create online project':'Save as Online'}</button></div>
         </form>
       {/if}
       {/if}
     {:else if deviceCode}
       <p>Enter this code on GitHub to connect your account.</p>
       <p><strong>{deviceCode}</strong></p>
-      <button type="button" onclick={()=>void invoke('open_web',{url:'https://github.com/login/device'}).catch(error=>onlineError=String(error))}>Open GitHub sign-in ↗</button>
+      <div class="dialog-actions"><button type="button" onclick={()=>void invoke('open_web',{url:'https://github.com/login/device'}).catch(error=>onlineError=String(error))}>Open GitHub sign-in ↗</button></div>
     {:else}
       <form onsubmit={e=>{e.preventDefault();void requestSignIn();}}>
         {#if !configuredClientId}
@@ -2069,22 +2078,26 @@
           <label>Public Client ID from GitHub App settings
             <input required bind:value={clientId} disabled={onlineWorking} placeholder="GitHub App Client ID" autocomplete="off" spellcheck="false"/>
           </label>
-          <button type="button" onclick={()=>void invoke('open_web',{url:'https://github.com/settings/apps'}).catch(error=>onlineError=String(error))}>Open GitHub App settings ↗</button>
         {/if}
-        <button disabled={onlineWorking || !(configuredClientId || clientId.trim())}>Sign in with GitHub</button>
+        <div class="dialog-actions">
+          {#if !configuredClientId}<button type="button" onclick={()=>void invoke('open_web',{url:'https://github.com/settings/apps'}).catch(error=>onlineError=String(error))}>Open GitHub App settings ↗</button>{/if}
+          <button disabled={onlineWorking || !(configuredClientId || clientId.trim())}>Sign in with GitHub</button>
+        </div>
       </form>
     {/if}
     {#if onlineError}<p role="alert">{onlineError}</p>{/if}
     {#if deviceCode}
-      <div class="online-dialog-footer">
+      <div class="dialog-actions online-dialog-footer">
         <button onclick={signOut}>Cancel sign-in</button>
       </div>
     {/if}
   {:else if dialogType==='Online save conflict'}
     <p>Someone saved a newer version on GitHub. Your changes are still open. Save a local recovery copy before reloading, or discard them to open the latest version.</p>
-    <button autofocus onclick={()=>{dialog.close();void saveAsLocal(true);}}>Save a Local Copy…</button>
-    <button onclick={()=>{dialog.close();void accessOnline('reload');}}>Discard Changes and Reload…</button>
-    <button onclick={()=>dialog.close()}>Keep Editing</button>
+    <div class="dialog-actions">
+      <button onclick={()=>{dialog.close();void saveAsLocal(true);}}>Save a Local Copy…</button>
+      <button onclick={()=>{dialog.close();void accessOnline('reload');}}>Discard Changes and Reload…</button>
+      <button onclick={()=>dialog.close()}>Keep Editing</button>
+    </div>
   {:else if dialogType==='GitHub users' && onlineProject}
     <GitHubProjectUsers repo={onlineProject.repo} onback={()=>{dialogType='Project settings';}}/>
   {:else if dialogType==='Project settings' || dialogType==='New project'}
@@ -2121,7 +2134,7 @@
       </fieldset>{/if}
       {#if !creating && !editing}<p>Read mode is on. Enable editing to change project settings.</p>{/if}
       {#if creating && !section && creationError}<p role="alert">{creationError}</p>{/if}
-      <div class="settings-footer">
+      <div class="dialog-actions settings-footer">
         {#if creating && !section}<button type="button" onclick={()=>dialog.close()}>Cancel</button>{/if}
         <button disabled={busy || !validUsers || (!creating && !editing) || ((!section || !creating) && !draftName.trim()) || invalidDraftTags()}>{creating && !section?'Create':'Apply changes'}</button>
         {#if section}<button class="settings-back" type="button" onclick={()=>leaveSection(false)}>Back</button>{/if}
@@ -2138,7 +2151,7 @@
         <label>User<select bind:value={selectedUser} onkeydown={confirmSelectedUser}>{#each pickerUsers as u}<option value={u.id}>{u.icon} {u.name}</option>{/each}</select></label>
         <button type="button" onclick={()=>registering=true}>Add New User</button>
       {/if}
-      <div><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={registering?!validRegistration:!selectedUser}>Start editing</button></div>
+      <div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={registering?!validRegistration:!selectedUser}>Start editing</button></div>
     </form>
   {:else if dialogType==='Page history' && historyPage}
     {@const preview=chosenVersion?.page??historyPage}
@@ -2166,15 +2179,15 @@
     </div>
   {:else if dialogType==='Add page link'}
     <form onsubmit={e=>{e.preventDefault();const p=project.pages.find(v=>v.id===linkPage);if(p)add('Page link',{...insertAt,target:p.id,name:p.name,w:210,h:84});dialog.close();}}>
-      <label>Page<select bind:value={linkPage}>{#each project.pages as p}<option value={p.id}>{p.name}</option>{/each}</select></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button>Add link</button></form>
+      <label>Page<select bind:value={linkPage}>{#each project.pages as p}<option value={p.id}>{p.name}</option>{/each}</select></label><div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button>Add link</button></div></form>
   {:else if dialogType==='Add web link'}
-    <form onsubmit={e=>{e.preventDefault();if(insertUrl(linkUrl,insertAt?.x,insertAt?.y))dialog.close();}}><label>URL<input type="url" required bind:value={linkUrl}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!webAddress(linkUrl)}>Add link</button></form>
+    <form onsubmit={e=>{e.preventDefault();if(insertUrl(linkUrl,insertAt?.x,insertAt?.y))dialog.close();}}><label>URL<input type="url" required bind:value={linkUrl}/></label><div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!webAddress(linkUrl)}>Add link</button></div></form>
   {:else if dialogType==='Editor logs'}
     <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No activity recorded in this session.</p>{/each}</div>
   {:else if dialogType==='Empty trash'}<p>Remove {project.trash?.length} {project.trash?.length===1?'page':'pages'} from this project’s trash?</p>
-    <button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button>
-  {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
-  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy focused page or canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste page, canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
+    <div class="dialog-actions"><button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button></div>
+  {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><div class="dialog-actions"><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button></div>
+  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy focused page or canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste page, canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></div></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
   <input hidden bind:this={fileInput} type="file" accept=".tkv,.gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{if(await confirmUnsaved('open'))await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>

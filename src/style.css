@@ -113,10 +113,13 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .studio dialog .close-panel {position:absolute;right:10px;top:10px;display:grid;place-items:center;width:28px;height:28px;padding:5px;background:none;border:0}
 .close-panel svg {width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
 .studio dialog:has(.close-panel)>h2 {padding-right:28px}
-.online-dialog-footer {display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.dialog-actions {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:16px}
+.dialog-actions button {max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.online-dialog-footer {padding-top:12px;border-top:1px solid var(--line)}
+.unsaved-actions {justify-content:space-between}
 
 .project-form fieldset {margin-bottom:16px}
-.settings-footer {display:flex;align-items:center;gap:8px}
+.settings-footer {justify-content:flex-start}
 .settings-footer .settings-back {margin-left:auto}
 .project-cache {padding:12px 0;border-top:1px solid var(--line)}
 .project-cache h3 {margin:0}
@@ -132,7 +135,6 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .tag-preset-preview label{display:flex;align-items:center;gap:8px;margin:0;padding:4px 0;color:var(--ink)}
 .tag-preset-preview input{width:auto;margin:0}
 .department-editor select {width:4em;flex:none}
-.user-picker>div {display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .project-form > .add-project-entry + .add-project-entry {margin-bottom:16px}
 
 .attachment-actions {display:flex;flex-wrap:wrap;gap:6px}
