@@ -107,6 +107,7 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .studio dialog .close-panel {position:absolute;right:10px;top:10px;display:grid;place-items:center;width:28px;height:28px;padding:5px;background:none;border:0}
 .close-panel svg {width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
 .studio dialog:has(.close-panel)>h2 {padding-right:28px}
+.online-dialog-footer {display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
 
 .project-form fieldset {margin-bottom:16px}
 

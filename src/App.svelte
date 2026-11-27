@@ -1290,8 +1290,8 @@
   {/each}
 {/snippet}
 
-{#snippet closePanel(close:()=>void)}
-  <button type="button" class="close-panel" title="Close" aria-label="Close" onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+{#snippet closePanel(close:()=>void,disabled=false)}
+  <button type="button" class="close-panel" title="Close" aria-label="Close" {disabled} onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 {/snippet}
 {#snippet imageTitle(image:Item)}
   <label class="check image-title"><input type="checkbox" disabled={!editing} checked={image.showTitle!==false}
@@ -1585,7 +1585,13 @@
       {:else}<p>Automatic replacement is available in the Windows portable build.</p>{/if}
     {/if}
   </dialog>
-  <dialog bind:this={dialog}>{#if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}{@render closePanel(()=>dialog.close())}{/if}<h2>{(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType}</h2>{#if dialogType==='Internal link' && active}
+  <dialog bind:this={dialog}>
+    {#if ['Online project','GitHub account'].includes(dialogType)}
+      {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
+    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}
+      {@render closePanel(()=>dialog.close())}
+    {/if}
+    <h2>{(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType}</h2>{#if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
       {#if draftRange}<label>Link to<select bind:value={linkType}><option value="project">Page or object</option><option value="web">Website</option></select></label>{/if}
@@ -1623,8 +1629,7 @@
     {:else if deviceCode}
       <p>Enter this code on GitHub to connect your account.</p>
       <p><strong>{deviceCode}</strong></p>
-      <a href="https://github.com/login/device" onclick={e=>{e.preventDefault();void invoke('open_web',{url:'https://github.com/login/device'}).catch(error=>onlineError=String(error));}}>Open GitHub sign-in ↗</a>
-      <button onclick={signOut}>Cancel sign-in</button>
+      <button type="button" onclick={()=>void invoke('open_web',{url:'https://github.com/login/device'}).catch(error=>onlineError=String(error))}>Open GitHub sign-in ↗</button>
     {:else}
       <form onsubmit={e=>{e.preventDefault();void requestSignIn();}}>
         {#if !configuredClientId}
@@ -1638,10 +1643,12 @@
       </form>
     {/if}
     {#if onlineError}<p role="alert">{onlineError}</p>{/if}
-    <div>
-      {#if !managingAccount && onlineProject}<button disabled={busy} onclick={downloadOnlineCopy}>Save a local copy…</button>{/if}
-      <button disabled={busy || onlineWorking} onclick={()=>dialog.close()}>Close</button>
-    </div>
+    {#if deviceCode || (!managingAccount && onlineProject)}
+      <div class="online-dialog-footer">
+        {#if !managingAccount && onlineProject}<button disabled={busy} onclick={downloadOnlineCopy}>Save a local copy…</button>{/if}
+        {#if deviceCode}<button onclick={signOut}>Cancel sign-in</button>{/if}
+      </div>
+    {/if}
   {:else if dialogType==='GitHub users' && onlineProject}
     <GitHubProjectUsers repo={onlineProject.repo} onback={()=>{dialogType='Project settings';}}/>
   {:else if dialogType==='Project settings' || dialogType==='New project'}
