@@ -1751,9 +1751,13 @@
       <button class="add-project-entry" type="button" onclick={()=>draftUsers.push({id:crypto.randomUUID(),name:'',icon:userIcons[0]})}>Add New User</button>
       {#if !validUsers && draftUsers.every(u=>u.name.trim())}<p role="alert">Choose a distinct name for each user.</p>{/if}
       </fieldset>{/if}
-      {#if section}<button type="button" onclick={()=>leaveSection(false)}>Back</button>{/if}
       {#if !creating && !editing}<p>Read mode is on. Enable editing to change project settings.</p>{/if}
-      {#if creating && !section}<button type="button" onclick={()=>dialog.close()}>Cancel</button>{#if creationError}<p role="alert">{creationError}</p>{/if}{/if}<button disabled={busy || !validUsers || (!creating && !editing) || ((!section || !creating) && !draftName.trim()) || draftCatalog.some(d=>!d.name.trim())}>{creating && !section?'Create':'Apply changes'}</button>
+      {#if creating && !section && creationError}<p role="alert">{creationError}</p>{/if}
+      <div class="settings-footer">
+        {#if creating && !section}<button type="button" onclick={()=>dialog.close()}>Cancel</button>{/if}
+        <button disabled={busy || !validUsers || (!creating && !editing) || ((!section || !creating) && !draftName.trim()) || draftCatalog.some(d=>!d.name.trim())}>{creating && !section?'Create':'Apply changes'}</button>
+        {#if section}<button class="settings-back" type="button" onclick={()=>leaveSection(false)}>Back</button>{/if}
+      </div>
     </form>
   {:else if dialogType==='Select editing user'}
     <form class="user-picker" onsubmit={e=>{e.preventDefault();enterEditing();}}>

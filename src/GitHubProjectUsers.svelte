@@ -89,5 +89,7 @@
     {/if}
   {/if}
 {/if}
-<button disabled={working} onclick={()=>run(fetchAccess)}>Refresh</button>
-<button disabled={working} onclick={onback}>Project settings</button>
+<div class="settings-footer">
+  <button disabled={working} onclick={()=>run(fetchAccess)}>Refresh</button>
+  <button disabled={working} class="settings-back" onclick={onback}>Back</button>
+</div>

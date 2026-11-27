@@ -115,6 +115,8 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .online-dialog-footer {display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
 
 .project-form fieldset {margin-bottom:16px}
+.settings-footer {display:flex;align-items:center;gap:8px}
+.settings-footer .settings-back {margin-left:auto}
 
 .add-project-entry {display:block;width:100%}
 .department-editor select {width:4em;flex:none}
