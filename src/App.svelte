@@ -52,6 +52,8 @@
   const initial:Project={version:1,name:'',pages:[page('Overview')]};
   let welcome=$state(true),launching=$state(false),welcomeError=$state(''),creationError=$state('');
   let startup=$state(localStorage.getItem('studio-startup')??'welcome');
+  let projectOpeningMode=$state(localStorage.getItem('studio-project-opening-mode')==='edit'?'edit':'read');
+  let openingEditPending=false;
   type Recent={name:string;path:string};
   function readRecent():Recent[]{
     try{const list:unknown=JSON.parse(localStorage.getItem('studio-recent')??'[]');
@@ -318,11 +320,17 @@
         void discoverProjects();
       }
     }catch(error){if(attempt===restoreAttempt)restoreAccountError=String(error);}
-    finally{if(attempt===restoreAttempt)restoringAccount=false;}
+    finally{
+      if(attempt===restoreAttempt){
+        restoringAccount=false;
+        applyProjectOpeningMode();
+      }
+    }
   }
   function skipGitHubRestore(){
     ++restoreAttempt;
     restoringAccount=false;restoreSkipped=true;
+    applyProjectOpeningMode();
   }
   async function signOut(){
     if(onlineWorking || busy)return;
@@ -550,6 +558,18 @@
   function recentEditors():string[]{
     try{const ids:unknown=JSON.parse(localStorage.getItem('studio-recent-editors')??'[]');return Array.isArray(ids)?ids.filter(id=>typeof id==='string'):[];}
     catch{return [];}
+  }
+  function applyProjectOpeningMode(){
+    if(!openingEditPending || restoringAccount)return;
+    openingEditPending=false;
+    if(welcome || editing || projectOpeningMode!=='edit')return;
+    if(!onlineProject && !onlineIdentity){
+      const users=project.users??[];
+      const last=recentEditors().find(id=>users.some(user=>user.id===id));
+      const knownEditor=last??(users.length===1?users[0].id:undefined);
+      if(knownEditor){editorId=knownEditor;editing=true;return;}
+    }
+    selectEditor();
   }
   function selectEditor(){
     if(onlineProject && !onlineIdentity){showGitHubAccount();return;}
@@ -923,7 +943,7 @@
     dirty=entry!==savedRevision || JSON.stringify(pageHistory)!==JSON.stringify(savedRevision?.doc.pageHistory);status=direction<0?'Undone':'Redone';
   }
   const readHint='Read mode is on. Press E to enable editing.';
-  function toggleEdit() { stopDrawing();wire=undefined;selectedConnection='';if(!editing){selectEditor();return;} frameOnly='';editing=false;editorId=''; if(status===readHint)status='';inline='';gesture=undefined;liveBox=undefined;drag=undefined; }
+  function toggleEdit() { openingEditPending=false;stopDrawing();wire=undefined;selectedConnection='';if(!editing){selectEditor();return;} frameOnly='';editing=false;editorId=''; if(status===readHint)status='';inline='';gesture=undefined;liveBox=undefined;drag=undefined; }
   function fit(objects: Item[] = picked.length ? picked : board.items.filter(o=>matches(itemTags(o),filters))) {
     if (!objects.length) {zoom=1;tx=30;ty=40;return;}
     const boxes=objects.map(bounds);
@@ -1170,6 +1190,7 @@
   async function discard(){return !dirty || (isTauri()?await confirm('Discard unsaved changes?'):window.confirm('Discard unsaved changes?'));}
   async function closeProject(){
     if(busy || !await discard())return;
+    openingEditPending=false;
     stopDrawing();welcome=true;welcomeError='';path='';onlineProject=undefined;status='';editing=false;
     project=initial;current=initial.pages[0].id;resetViews();resetEdits(true);
     inline='';frameOnly='';titleId='';playing='';range=undefined;marquee=undefined;
@@ -1188,6 +1209,7 @@
         const location=isTauri()?await save({defaultPath:next.name+'.tkv',filters:fileFilters}):'';
         if(location===null)return;
         if(location)await invoke('save_project',{path:location,document:JSON.stringify(next)});
+        openingEditPending=false;
         project=next;path=location;onlineProject=undefined;welcome=false;editorId='';editing=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
       }catch(error){creationError=String(error);recordError('Create project',error);}
       finally{busy=false;}
@@ -1206,6 +1228,8 @@
     if(remote)checkOnlineAttachments(data);
     if(!discardConfirmed && !await discard())return false;
     project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
+    openingEditPending=projectOpeningMode==='edit';
+    applyProjectOpeningMode();
     return true;
   }
   async function openFile(){
@@ -1689,6 +1713,9 @@
   <dialog class="settings" bind:this={settings}>
     {@render closePanel(()=>settings.close())}<h2>Settings</h2>
     {#if isTauri()}<label>On startup<select bind:value={startup} onchange={()=>localStorage.setItem('studio-startup',startup)}><option value="welcome">Show welcome screen</option><option value="last">Reopen last project</option></select></label>{/if}
+    <label>Open projects in<select bind:value={projectOpeningMode} onchange={()=>localStorage.setItem('studio-project-opening-mode',projectOpeningMode)}>
+      <option value="read">Read mode</option><option value="edit">Edit mode</option>
+    </select></label>
     <h3>Appearance</h3>
     <label>Theme<select aria-label="Appearance" bind:value={theme} onchange={()=>localStorage.setItem('studio-theme',theme)}><option>System</option><option>Light</option><option>Dark</option></select></label>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
