@@ -416,7 +416,6 @@
       }else{
         commit();typingField=null;
         account=result.account;deviceCode='';
-        if(editing && !onlineProject && onlineIdentity)editorId=onlineIdentity.id;
         void discoverProjects();
       }
     }catch(error){if(attempt===signInAttempt){deviceCode='';onlineError=String(error);}}
@@ -430,7 +429,6 @@
       account=restored??undefined;
       if(account){
         commit();typingField=null;
-        if(editing && !onlineProject && onlineIdentity)editorId=onlineIdentity.id;
         void discoverProjects();
       }
     }catch(error){if(attempt===restoreAttempt)restoreAccountError=String(error);}
@@ -753,17 +751,17 @@
       const knownEditor=last??(users.length===1?users[0].id:undefined);
       if(knownEditor){editorId=knownEditor;editing=true;return;}
     }
-    selectEditor();
+    selectEditor(true);
   }
-  function selectEditor(){
+  function selectEditor(automatic=false){
     if(onlineProject && !onlineIdentity){showGitHubAccount();return;}
     if(onlineProject && !onlineProject.writable){status='Reload the project after signing in with write access.';return;}
-    if(onlineIdentity){
+    if(onlineIdentity && (onlineProject || automatic)){
       editorId=onlineIdentity.id;editing=true;
       if(status===readHint)status='';
       return;
     }
-    const users=project.users??[];
+    const users=[...project.users??[],...(onlineIdentity?[onlineIdentity]:[])];
     const last=recentEditors().map(id=>users.find(u=>u.id===id)).find(Boolean);
     pickerUsers=last?[last,...users.filter(u=>u.id!==last.id)]:[...users];
     selectedUser=pickerUsers[0]?.id??'';registering=!users.length;userName='';userIcon=userIcons[0];ask('Select editing user');
@@ -784,7 +782,7 @@
       const user={id:crypto.randomUUID(),name:userName.trim(),icon:userIcon};
       project.users=[...project.users??[],user];selectedUser=user.id;change();
     }
-    if(!project.users?.some(u=>u.id===selectedUser))return;
+    if(selectedUser!==onlineIdentity?.id && !project.users?.some(u=>u.id===selectedUser))return;
     editorId=selectedUser;editing=true;
     localStorage.setItem('studio-recent-editors',JSON.stringify([editorId,...recentEditors().filter(id=>id!==editorId)]));
     if(status===readHint)status='';
@@ -1426,7 +1424,7 @@
         if(location===null)return;
         if(location)await invoke('save_project',{path:location,document:JSON.stringify(next)});
         openingEditPending=false;
-        project=next;path=location;onlineProject=undefined;welcome=false;editorId='';editing=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
+        project=next;path=location;onlineProject=undefined;welcome=false;editorId='';editing=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor(true);
       }catch(error){creationError=String(error);recordError('Create project',error);}
       finally{busy=false;}
       return;
@@ -2194,7 +2192,7 @@
         {#if userName.trim() && !validRegistration}<p role="alert">This user name is already in use.</p>{/if}
         {#if pickerUsers.length}<button type="button" onclick={()=>registering=false}>Choose existing user</button>{/if}
       {:else}
-        <label>User<select bind:value={selectedUser} onkeydown={confirmSelectedUser}>{#each pickerUsers as u}<option value={u.id}>{u.icon} {u.name}</option>{/each}</select></label>
+        <label>User<select bind:value={selectedUser} onkeydown={confirmSelectedUser}>{#each pickerUsers as u}<option value={u.id}>{u.icon} {u.id===onlineIdentity?.id?'@'+u.name+' (GitHub)':u.name}</option>{/each}</select></label>
         <button type="button" onclick={()=>registering=true}>Add New User</button>
       {/if}
       <div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={registering?!validRegistration:!selectedUser}>Start editing</button></div>
