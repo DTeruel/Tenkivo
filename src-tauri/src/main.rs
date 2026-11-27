@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::{fs, io::Write, path::Path};
+mod app_data;
 mod attachments;
 mod export;
 mod updates;
@@ -117,8 +118,15 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             use tauri::Manager;
-            let cache_root = app.path().local_data_dir()?.join("Tenkivo").join("Cache").join("Projects");
-            app.manage(online::Online::new(app.path().app_local_data_dir()?, cache_root));
+            let local_data = app.path().local_data_dir()?;
+            let session_dir = app.path().app_local_data_dir()?;
+            let cache_root = local_data.join("Tenkivo").join("Cache").join("Projects");
+            app_data::migrate(&local_data, &session_dir, &cache_root);
+            app.manage(online::Online::new(session_dir, cache_root));
+
+            // Move the WebView profile before WebView2 opens its storage.
+            let config = app.config().app.windows.first().ok_or("Missing main window config")?;
+            let window = tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
             #[cfg(windows)]
             {
                 use webview2_com::{
@@ -127,7 +135,6 @@ fn main() {
                 };
                 use windows::core::Interface;
                 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_J, VK_MENU, VK_SHIFT};
-                let window = app.get_webview_window("main").ok_or("Missing main window")?;
                 window.with_webview(|view| unsafe {
                     let settings = view.controller().CoreWebView2()
                         .and_then(|webview| webview.Settings())
@@ -153,6 +160,8 @@ fn main() {
                     }
                 })?;
             }
+            #[cfg(not(windows))]
+            let _ = window;
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())

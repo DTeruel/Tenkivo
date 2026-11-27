@@ -37,7 +37,6 @@ pub struct Online {
 
 impl Online {
     pub fn new(session_dir: PathBuf, cache_root: PathBuf) -> Self {
-        images::migrate_cache(&session_dir.join("online-image-cache"), &cache_root);
         Self {
             session: Mutex::new(Session::default()),
             session_dir,

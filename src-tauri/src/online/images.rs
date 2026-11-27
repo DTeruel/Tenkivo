@@ -178,23 +178,6 @@ pub(super) async fn raw_file(request: RequestBuilder) -> Result<Vec<u8>, String>
     Ok(bytes)
 }
 
-pub(super) fn migrate_cache(legacy_root: &Path, cache_root: &Path) {
-    if !legacy_root
-        .symlink_metadata()
-        .is_ok_and(|info| info.is_dir())
-        || cache_root.symlink_metadata().is_ok()
-    {
-        return;
-    }
-    if let Some(parent) = cache_root.parent() {
-        if let Err(error) =
-            fs::create_dir_all(parent).and_then(|_| fs::rename(legacy_root, cache_root))
-        {
-            eprintln!("Could not migrate the project cache: {error}");
-        }
-    }
-}
-
 pub(super) fn cache_dir(cache_root: &Path, repo: &str) -> Result<PathBuf, String> {
     repository_url(repo)?;
     fs::create_dir_all(cache_root).map_err(|error| error.to_string())?;
