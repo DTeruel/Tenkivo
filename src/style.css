@@ -59,7 +59,7 @@ header nav {display:flex;align-items:center;gap:4px}
 .file-menu summary,.page-trash summary {cursor:pointer;list-style:none}
 .file-menu summary {padding:6px 10px;border-radius:5px}
 .file-menu summary:hover,.file-menu[open] summary {background:var(--wash)}
-.file-list {position:absolute;left:0;top:100%;min-width:175px;background:var(--paper);border:1px solid var(--line);padding:4px;display:grid;z-index:28;border-radius:6px;box-shadow:0 5px 14px #0002}
+.file-list {position:absolute;left:0;top:100%;min-width:205px;background:var(--paper);border:1px solid var(--line);padding:4px;display:grid;z-index:28;border-radius:6px;box-shadow:0 5px 14px #0002}
 .file-list button {text-align:left}
 .sidebar .panel-content {overflow:visible}
 .pages-tools,.canvas-label,.page-trash summary {display:flex;align-items:center;gap:6px}

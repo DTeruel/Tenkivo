@@ -20,7 +20,7 @@
   }
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from '@tauri-apps/plugin-dialog';
-  import { benchmark, defaultCatalog, editBody, item, page, sample, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
+  import { defaultCatalog, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
   const noteStyles:NoteStyle[]=['bold','italic','underline'];
@@ -49,7 +49,7 @@
     const observer=new ResizeObserver(measure);observer.observe(node);measure();
     return {update(next:typeof options){options=next;measure();},destroy(){observer.disconnect();cancelAnimationFrame(frame);}};
   }
-  const initial:ReturnType<typeof sample>={version:1,name:'',pages:[page('Overview')]};
+  const initial:Project={version:1,name:'',pages:[page('Overview')]};
   let welcome=$state(true),launching=$state(false),welcomeError=$state(''),creationError=$state('');
   let startup=$state(localStorage.getItem('studio-startup')??'welcome');
   type Recent={name:string;path:string};
@@ -231,9 +231,10 @@
   type OnlineProject={repo:string;branch:string;sha:string;writable:boolean};
   type DiscoveredProject=Pick<OnlineProject,'repo'|'writable'>;
   let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
+  const canSaveProject=$derived(!busy && (!onlineProject || !!(account && onlineProject.writable)));
   let restoringAccount=$state(isTauri()),restoreAccountError=$state('');
   let restoreSkipped=$state(false), restoreAttempt=0;
-  let onlineMode=$state<'manage'|'open'|'create'>('manage');
+  let onlineMode=$state<'open'|'create'|'save'>('open');
   let discoveredProjects=$state<DiscoveredProject[]>([]),discovering=$state(false),discoveryError=$state(''),discoveryPaused=$state(false);
   let discoveryAttempt=0;
   let onlineRepo=$state(localStorage.getItem('studio-online-repo')??'');
@@ -267,10 +268,11 @@
     ask('GitHub account');
   }
 
-  function showOnline(mode:'manage'|'open'|'create'='manage'){
+  function showOnline(mode:'open'|'create'|'save'){
     if(restoringAccount)return;
     onlineMode=mode;
     onlineRepo=onlineProject?.repo??onlineRepo;
+    if(mode==='create')onlineNewName='';
     onlineError='';
     ask('Online project');
   }
@@ -339,32 +341,46 @@
   function checkOnlineAttachments(doc:Project){
     const pages=[...doc.pages,...doc.trash??[],...(doc.pageHistory??[]).map(version=>version.page)];
     if(pages.some(page=>page.items.some(item=>item.attachment)))
-      throw Error('This project contains local file attachments or has them in its page history. Tenkivo cannot publish this copy. To start a shared project, use Create online project from the welcome screen.');
+      throw Error('This project contains local file attachments, including those in page history. Saving online is unavailable until those attachments can be shared. Use New online project to start a separate shared project.');
   }
-  function sharedDocument(){
+  function snapshotForSave(online=false){
+    commit();typingField=null;
     const pageHistory=checkpointPages();
-    checkOnlineAttachments({...project,pageHistory});
-    return {pageHistory,raw:JSON.stringify({...project,pageHistory})};
+    const document={...project,pageHistory};
+    if(online)checkOnlineAttachments(document);
+    return {pageHistory,raw:JSON.stringify(document),revision:revisions[revision]};
   }
-  async function accessOnline(action:'open'|'publish'|'reload'|'create',selectedRepo?:string){
+  function acceptSaved(snapshot:ReturnType<typeof snapshotForSave>){
+    const {pageHistory,raw,revision:saving}=snapshot;
+    project.pageHistory=pageHistory;
+    savedRevision={...saving,doc:{...saving.doc,pageHistory}};
+    if(revisions[revision]===saving)revisions[revision]=savedRevision;
+    dirty=JSON.stringify(project)!==raw;
+  }
+  async function accessOnline(action:'open'|'save'|'reload'|'create',selectedRepo?:string){
     if(onlineWorking || busy || !account)return;
     const repo=action==='reload' ? onlineProject?.repo : selectedRepo??onlineRepo.trim();
-    if(!repo || (action==='publish' && (welcome || onlineProject)))return;
+    if(!repo || (action==='save' && (welcome || onlineProject)))return;
     const newName=onlineNewName.trim();
-    if(action==='create' && (!welcome || !newName))return;
+    if(action==='create' && !newName)return;
     onlineWorking=true;busy=true;onlineError='';
     try{
       if(action==='create'){
+        if(!await discard())return;
         const document=JSON.stringify({version:1,name:newName,pages:[page('Overview')] } satisfies Project);
         const saved=await invoke<{sha:string;branch:string}>('online_save',{repo,branch:null,sha:null,document});
-        await load(document,'',{repo,...saved,writable:true});
+        await load(document,'',{repo,...saved,writable:true},true);
         onlineNewName='';
         status='Online project created · '+repo;
         void discoverProjects();
-      }else if(action==='publish'){
-        commit();
-        await invoke('online_save',{repo,branch:null,sha:null,document:sharedDocument().raw});
-        status='Online copy published · '+repo;
+      }else if(action==='save'){
+        const snapshot=snapshotForSave(true);
+        const saved=await invoke<{sha:string;branch:string}>('online_save',{repo,branch:null,sha:null,document:snapshot.raw});
+        if(path && localStorage.getItem('studio-last')===path)localStorage.removeItem('studio-last');
+        onlineProject={repo,...saved,writable:true};path='';
+        if(editing && onlineIdentity)editorId=onlineIdentity.id;
+        acceptSaved(snapshot);
+        status='Project saved online · '+repo;
         void discoverProjects();
       }else{
         const {document,...remote}=await invoke<Omit<OnlineProject,'repo'> & {document:string}>('online_open',{repo,branch:action==='reload'?onlineProject?.branch:null});
@@ -381,17 +397,19 @@
     }
     finally{onlineWorking=false;busy=false;}
   }
-  async function downloadOnlineCopy(){
+  async function saveAsLocal(){
     if(busy || !onlineProject)return;
     busy=true;onlineError='';
     try{
       const destination=await save({defaultPath:project.name+'.tkv',filters:fileFilters});
       if(destination){
-        commit();
-        await invoke('save_project',{path:destination,document:JSON.stringify({...project,pageHistory:checkpointPages()})});
-        status='Local copy saved';dialog.close();
+        const snapshot=snapshotForSave();
+        await invoke('save_project',{path:destination,document:snapshot.raw});
+        path=destination;onlineProject=undefined;rememberProject(destination);
+        acceptSaved(snapshot);
+        status='Project saved locally';
       }
-    }catch(error){onlineError=String(error);}
+    }catch(error){recordError('Save as local',error);status=String(error);}
     finally{busy=false;}
   }
   let fileDialog:HTMLDialogElement, incoming=$state<string[]>([]), copying=$state(false), importError=$state(''), playing=$state('');
@@ -493,7 +511,7 @@
   }
   let zoom = $state(1), tx = $state(30), ty = $state(40), width = $state(800), height = $state(600);
   let viewport=$state<HTMLDivElement>(null!), imageInput: HTMLInputElement, fileInput: HTMLInputElement, dialog: HTMLDialogElement;
-  let dialogType = $state(''), name = $state(''), fps = $state(0), showFps = $state(false);
+  let dialogType = $state(''), name = $state('');
   let filters = $state<Department[]>([]), drag: {x:number;y:number;tx:number;ty:number;objects:{o:Item;x:number;y:number}[];pan:boolean} | undefined;
   const catalog=$derived(project.catalog??defaultCatalog);
   const departments=$derived(catalog.map(d=>d.id));
@@ -1125,7 +1143,7 @@
         const location=isTauri()?await save({defaultPath:next.name+'.tkv',filters:fileFilters}):'';
         if(location===null)return;
         if(location)await invoke('save_project',{path:location,document:JSON.stringify(next)});
-        project=next;path=location;onlineProject=undefined;welcome=false;editorId='';editing=false;showFps=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
+        project=next;path=location;onlineProject=undefined;welcome=false;editorId='';editing=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
       }catch(error){creationError=String(error);recordError('Create project',error);}
       finally{busy=false;}
       return;
@@ -1134,15 +1152,15 @@
     const p=page(name.trim());p.parentId=pageParent;project.pages.push(p);await navigate(p);
     change();dialog.close();
   }
-  async function load(raw:string,location:string,remote?:OnlineProject){
+  async function load(raw:string,location:string,remote?:OnlineProject,discardConfirmed=false){
     const data:unknown=JSON.parse(raw);
     if(data && typeof data==='object' && 'pages' in data && Array.isArray(data.pages)){
       migrateLegacyDiagrams(data as Project);
     }
     if(!validProject(data))throw Error('Unsupported or invalid project.');
     if(remote)checkOnlineAttachments(data);
-    if(!await discard())return false;
-    project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;showFps=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
+    if(!discardConfirmed && !await discard())return false;
+    project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
     return true;
   }
   async function openFile(){
@@ -1157,24 +1175,20 @@
       if(remote && (!account || !remote.writable)){status='Sign in to GitHub with write access to save this project.';return;}
       const location=isTauri() && !remote?(path || await save({defaultPath:project.name+'.tkv',filters:fileFilters})):'';
       if(isTauri() && !remote && !location)return;
-      commit();typingField=null;const saving=revisions[revision];
-      const shared=remote?sharedDocument():undefined;
-      const pageHistory=shared?.pageHistory??checkpointPages();
-      const raw=shared?.raw??JSON.stringify({...project,pageHistory});
+      const snapshot=snapshotForSave(!!remote);
+      const raw=snapshot.raw;
       if(remote){
         const {sha}=await invoke<{sha:string}>('online_save',{repo:remote.repo,branch:remote.branch,sha:remote.sha,document:raw});
         onlineProject={...remote,sha};
       }else if(location){await invoke('save_project',{path:location,document:raw});path=location;rememberProject(location);}
       else{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([raw]));a.href=url;a.download=project.name+'.tkv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-      project.pageHistory=pageHistory;
-      savedRevision={...saving,doc:{...saving.doc,pageHistory}};
-      if(revisions[revision]===saving)revisions[revision]=savedRevision;
-      dirty=JSON.stringify(project)!==raw;status=remote?'Project saved to GitHub':'Project saved';
+      acceptSaved(snapshot);
+      status=remote?'Project saved to GitHub':'Project saved';
     }catch(e){recordError('Project file',e);status=String(e);if(welcome)welcomeError=status;}finally{busy=false;}
   }
   let exporter:ExportDialog;
   async function ensureExportSaved(){
-    if(onlineProject){status='Save a local copy before creating a project archive.';return false;}
+    if(onlineProject){status='Use File → Save as Local before creating a project archive.';return false;}
     await saveFile();
     return !!path && !dirty;
   }
@@ -1244,18 +1258,6 @@
     if(e.key.toLowerCase()==='e' && !e.repeat)toggleEdit();
     if(e.key==='Escape'){inline='';ids=[];}
   }
-  async function createTemplate(){
-    if(busy)return;
-    busy=true;
-    try{
-      const folder=isTauri()?await open({directory:true,title:'Choose a folder for the template project'}):'';
-      if(folder===null || !await discard())return;
-      const example=sample();example.name='Template Project';example.pages.push(benchmark());
-      const location=isTauri()?await invoke<string>('create_template',{folder,document:JSON.stringify(example)}):'';
-      project=example;path=location;onlineProject=undefined;welcome=false;rememberProject(location);editorId='';editing=false;showFps=true;resetViews();await navigate(example.pages[0]);resetEdits(!!location);
-      status=location?'Template created in '+folder:'Template ready. Save to download it.';selectEditor();
-    }catch(err){status=String(err);}finally{busy=false;}
-  }
   onMount(()=>{
     if(isTauri())void invoke<string|null>('github_client_id').then(id=>{configuredClientId=id??'';}).catch(()=>{});
     const restoreFrame=isTauri()?requestAnimationFrame(()=>{if(!restoreSkipped)void restoreGitHubAccount();}):undefined;
@@ -1283,14 +1285,11 @@
     const last=localStorage.getItem('studio-last');
     if(isTauri())void invoke<string|null>('startup_project').then(file=>{if(file)void openRecent(file);else if(startup==='last' && last)void openRecent(last);else void checkRecent();}).catch(()=>void checkRecent());
     else void checkRecent();
-     let id=0,start=performance.now(),frames=0;
-    function frame(t:number){frames++;if(t-start>=750){fps=Math.round(frames*1000/(t-start));start=t;frames=0;}id=requestAnimationFrame(frame);}
-    id=requestAnimationFrame(frame);
     const before=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue='';}};
     const refresh=()=>{if(welcome)void checkRecent();};
     window.addEventListener('focus',refresh);
     window.addEventListener('beforeunload',before);
-    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
+    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);void listener?.then(stop=>stop());window.removeEventListener('beforeunload',before);};
   });
 </script>
 
@@ -1407,16 +1406,23 @@
   <header>
     <nav><details class="file-menu" bind:this={fileMenu}>
       <summary>File</summary><div class="file-list">
-        <button onclick={()=>{fileMenu.open=false;newProject();}}>New…</button>
-        <button disabled={busy} onclick={()=>{fileMenu.open=false;void createTemplate();}}>New Template…</button>
-        <button onclick={()=>{fileMenu.open=false;void openFile();}}>Open…</button>
-        {#if isTauri()}<button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline();}}>Online project…</button>{/if}
-        <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close</button>
+        <button disabled={busy} onclick={()=>{fileMenu.open=false;newProject();}}>New Local Project…</button>
+        {#if isTauri()}<button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('create');}}>New Online Project…</button>{/if}
         <hr/>
-        <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveFile();}}>Save</button>
+        <button disabled={busy} onclick={()=>{fileMenu.open=false;void openFile();}}>Open Local Project…</button>
+        {#if isTauri()}<button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('open');}}>Open Online Project…</button>{/if}
+        <hr/>
+        <button disabled={!canSaveProject} onclick={()=>{fileMenu.open=false;void saveFile();}}>Save</button>
+        {#if onlineProject}
+          <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveAsLocal();}}>Save as Local…</button>
+          <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;if(account)void accessOnline('reload');else showGitHubAccount();}}>Reload from GitHub</button>
+        {:else if isTauri()}
+          <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('save');}}>Save as Online…</button>
+        {/if}
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export…</button>
-      </div></details><button disabled={busy} title={dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button></nav>
+        <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
+      </div></details><button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button></nav>
     <div class="app-actions">
       {@render gitHubAccountButton()}
       <button aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onclick={()=>ask('Keyboard shortcuts')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M8 15h8"/></svg></button>
@@ -1626,7 +1632,7 @@
   <div class="status" role="status"><i></i>{#if status==='PDF exported' && exportedPdf}
     <button class="export-result" title="Open exported PDF" onclick={()=>openExport(false)}>PDF exported ↗</button>
     <button class="export-result" onclick={()=>openExport(true)}>Open folder</button>
-    {:else}{status || (onlineProject?'GitHub · '+onlineProject.repo:'Local project')}{/if} <span>{showFps?fps+' fps　·　':''}{board.items.length} objects</span></div>
+    {:else}{status || (onlineProject?'GitHub · '+onlineProject.repo:'Local project')}{/if} <span>{board.items.length} objects</span></div>
   {/if}
   <dialog bind:this={fileDialog} oncancel={e=>{if(copying)e.preventDefault();}}>
     <h2>Add to canvas</h2><p>{incoming.length===1?incoming[0]:incoming.length+' items selected'}</p>
@@ -1657,13 +1663,13 @@
       {:else}<p>Automatic replacement is available in the Windows portable build.</p>{/if}
     {/if}
   </dialog>
-  <dialog bind:this={dialog}>
+  <dialog bind:this={dialog} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
     {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
-    <h2>{dialogType==='Online project' && onlineMode!=='manage'?(onlineMode==='create'?'New online project':'Open online project'):(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType}</h2>{#if dialogType==='Internal link' && active}
+    <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
       {#if draftRange}<label>Link to<select bind:value={linkType}><option value="project">Page or object</option><option value="web">Website</option></select></label>{/if}
@@ -1683,19 +1689,18 @@
         <p>Tenkivo uses this account as your editing identity.</p>
         <button disabled={busy} onclick={signOut}>Sign out</button>
       {:else}
-      {#if onlineProject}<p>Current project · {onlineProject.repo} ({onlineProject.branch})</p>{/if}
-      {#if onlineMode!=='create'}{@render discoverableProjects()}{/if}
+      {#if onlineMode==='open'}{@render discoverableProjects()}{/if}
+      {#if onlineMode==='save'}<p>Save this project to a private GitHub repository and continue editing the online copy.</p>{/if}
       <label>Private repository<input placeholder="owner/repository" bind:value={onlineRepo} disabled={onlineWorking}/></label>
-      {#if onlineMode!=='create'}<button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>{/if}
-      {#if onlineMode==='create'}
+      {#if onlineMode==='open'}
+        <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>
+      {:else if onlineMode==='create'}
         <form onsubmit={e=>{e.preventDefault();void accessOnline('create');}}>
           <label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>
           <button disabled={busy || !onlineRepo.trim() || !onlineNewName.trim()}>Create online project</button>
         </form>
-      {:else if !welcome && !onlineProject && onlineMode==='manage'}
-        <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('publish')}>Publish a copy</button>
-      {:else if onlineProject}
-        <button disabled={busy} onclick={()=>accessOnline('reload')}>Reload from GitHub</button>
+      {:else}
+        <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('save')}>Save as Online</button>
       {/if}
       {/if}
     {:else if deviceCode}
@@ -1715,10 +1720,9 @@
       </form>
     {/if}
     {#if onlineError}<p role="alert">{onlineError}</p>{/if}
-    {#if deviceCode || (!managingAccount && onlineProject)}
+    {#if deviceCode}
       <div class="online-dialog-footer">
-        {#if !managingAccount && onlineProject}<button disabled={busy} onclick={downloadOnlineCopy}>Save a local copy…</button>{/if}
-        {#if deviceCode}<button onclick={signOut}>Cancel sign-in</button>{/if}
+        <button onclick={signOut}>Cancel sign-in</button>
       </div>
     {/if}
   {:else if dialogType==='GitHub users' && onlineProject}

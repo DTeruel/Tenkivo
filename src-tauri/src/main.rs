@@ -70,35 +70,8 @@ fn open_project(path: String) -> Result<String, String> {
     fs::read_to_string(project_file(&path)?).map_err(|err| err.to_string())
 }
 
-#[tauri::command]
-fn create_template(folder: String, document: String) -> Result<String, String> {
-    let folder = Path::new(&folder);
-    if !folder.is_absolute() || !folder.is_dir() {
-        return Err("Choose an existing folder.".into());
-    }
-    let mut draft = tempfile::NamedTempFile::new_in(folder).map_err(|e| e.to_string())?;
-    draft
-        .write_all(document.as_bytes())
-        .and_then(|_| draft.as_file().sync_all())
-        .map_err(|e| e.to_string())?;
-    for number in 1.. {
-        let name = if number == 1 {
-            "Template Project.tkv".into()
-        } else {
-            format!("Template Project ({number}).tkv")
-        };
-        let path = folder.join(name);
-        match draft.persist_noclobber(&path) {
-            Ok(_) => return Ok(path.to_string_lossy().into_owned()),
-            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => draft = e.file,
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    unreachable!()
-}
-
 #[cfg(test)]
-mod template_tests {
+mod project_tests {
     use super::*;
     #[test]
     fn recent_file_can_be_reopened_and_saved_at_the_same_path() {
@@ -112,16 +85,6 @@ mod template_tests {
         assert_eq!(open_project(path.clone()).unwrap(), "edited");
         fs::remove_file(&path).unwrap();
         assert_eq!(project_availability(path).unwrap(), "Missing");
-    }
-    #[test]
-    fn existing_projects_are_preserved() {
-        let dir = tempfile::tempdir().unwrap();
-        let folder = dir.path().to_string_lossy().to_string();
-        let first = create_template(folder.clone(), "one".into()).unwrap();
-        let second = create_template(folder, "two".into()).unwrap();
-        assert_ne!(first, second);
-        assert_eq!(open_project(first).unwrap(), "one");
-        assert_eq!(open_project(second).unwrap(), "two");
     }
 }
 
@@ -210,7 +173,6 @@ fn main() {
             open_project,
             startup_project,
             project_availability,
-            create_template,
             export::export_zip,
             export::export_pdf,
             export::open_pdf_location,

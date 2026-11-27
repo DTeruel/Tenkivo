@@ -173,49 +173,6 @@ export function item(kind: Kind, name: string, x: number, y: number, extra: Part
 }
 export function page(name: string): Page { return { id: crypto.randomUUID(), name, items: [] }; }
 
-// Generate distinct raster references offline so the benchmark includes image decoding.
-function landscape(seed: number, width: number, height: number) {
-  const canvas = document.createElement('canvas');
-  canvas.width = width; canvas.height = height;
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(width / 480, height / 270);
-  const palette = seed % 2 ? ['#eab784','#bd8869','#806559','#584d48','#343d39'] : ['#cbd9cb','#a5b9ac','#798e84','#50695e','#30483c'];
-  ctx.fillStyle = palette[0]; ctx.fillRect(0,0,480,270);
-  ctx.fillStyle = '#fff0cf'; ctx.beginPath(); ctx.arc(355,63,28,0,Math.PI*2); ctx.fill();
-  for (let layer = 1; layer < 5; layer++) {
-    ctx.fillStyle = palette[layer]; ctx.beginPath(); ctx.moveTo(0,270);
-    for (let x = 0; x <= 480; x += 3) {
-      const phase = seed * 3 + layer * 7;
-      const y = 64 + layer * 32 + 24*Math.sin(x/62 + phase) + 13*Math.cos(x/31 + phase) + 5*Math.sin(x/11 + phase);
-      ctx.lineTo(x,y);
-    }
-    ctx.lineTo(480,270); ctx.fill();
-  }
-  return canvas.toDataURL('image/jpeg',0.84);
-}
-export function sample(): Project {
-  const board = page('World direction'), mechanics = page('Traversal');
-  const frame = item('Frame','The valley',0,0,{w:560,h:385,department:'Art'});
-  board.items = [frame,
-    item('Image','Northern ridge',20,56,{parent:frame.id,source:landscape(2,800,440),department:'Art',w:330,h:210}),
-    item('Image','Dusk study',365,56,{parent:frame.id,source:landscape(5,420,520),department:'Art',w:173,h:210}),
-    item('Note','Atmosphere',20,277,{parent:frame.id,w:518,h:90,body:'Quiet ridgelines. Warm light on the path home.'}),
-    item('Page link','Traversal',590,30,{target:mechanics.id,w:210,h:84})];
-  mechanics.items.push(item('Note','Movement',0,0,{body:'Let the silhouette of each ridge suggest the next route.'}));
-  return {version:1,name:'Valley study',pages:[board,mechanics]};
-}
-export function benchmark() {
-  const board = page('Canvas benchmark');
-  const frame = item('Frame','Reference grid',0,0,{w:2920,h:2190});
-  board.items.push(frame);
-  for (let i=0;i<100;i++) {
-    const w=180+(i%4)*25, h=120+(i%3)*20;
-    board.items.push(item('Image','Study '+(i+1),24+(i%10)*288,52+Math.floor(i/10)*210,
-      {w,h,parent:frame.id,department:'Art',source:landscape(i,w*2,h*2)}));
-  }
-  for (let i=0;i<3;i++) board.items.push(item('Note','Review '+(i+1),2960,i*180,{body:'Double-click to edit this note.'}));
-  return board;
-}
 function validConnections(page:Page){
   const edges=page.connections;
   if(!Array.isArray(edges))return false;

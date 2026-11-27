@@ -476,7 +476,7 @@ pub async fn online_open(
         .map_err(connection_error)?;
     if response.status() == StatusCode::NOT_FOUND {
         return Err(
-            "There is no readable project.tkv on this branch. Create an online project or publish a copy first. If the file already exists, check the GitHub App's Contents permission.".into(),
+            "There is no readable project.tkv on this branch. Create an online project or use Save as Online first. If the file already exists, check the GitHub App's Contents permission.".into(),
         );
     }
     let content: Value = checked(response)?.json().await.map_err(connection_error)?;
@@ -561,7 +561,7 @@ pub async fn online_save(
             .collect();
         let hint = match status {
             StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY if sha.is_some() =>
-                "Save a local copy before reloading the online project. Also check whether the branch allows direct writes.",
+                "Use File → Save as Local to preserve your changes before reopening the online project. Also check whether the branch allows direct writes.",
             StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY =>
                 "If project.tkv exists, open it instead. For an empty repository, add a README to initialize the default branch and retry.",
             StatusCode::FORBIDDEN | StatusCode::NOT_FOUND =>
