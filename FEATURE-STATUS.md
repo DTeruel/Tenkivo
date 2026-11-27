@@ -11,6 +11,6 @@ Status of the requested desktop application as of 0.10.0.
 | Content | Notes, font size and auto-fit, images, grouped frames, files, folders, shortcuts, web link cards and YouTube embeds | Rich text formatting, spreadsheet-style tables, diagram connectors |
 | References | Editable object titles, links from text spans and objects to pages and objects, focused destination navigation | Reference support for future table and diagram elements |
 | Editing | Zoom, pan, focus, marquee, undo/redo, group transforms, independent frame editing, alignment, snapping, deletion and shortcut help | General copy/paste across elements and pages, duplicate page, optional page-delete confirmation, complete keyboard coverage |
-| Departments | Custom names and colors, multiple departments per page, inherited page tags, persistent navigation filters, inherited or multiple explicit object departments | Additional custom tree views |
+| Tags | Editable presets, custom names and colors, multiple tags per page, persistent filters, and inherited or explicit object tags | Additional custom tree views |
 | Attachments | Local copies, linked originals, native opening, missing-image placeholder and manual relinking | Project-managed preview cache, missing-file detection for all card types |
-| Export | ZIP with external path review and conversion, page/project PDF, preview, A4 tiling, index, internal links and department filtering | macOS verification |
+| Export | ZIP with external path review and conversion, page/project PDF, preview, A4 tiling, index, internal links and tag filtering | macOS verification |

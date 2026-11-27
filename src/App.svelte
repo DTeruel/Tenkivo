@@ -19,7 +19,7 @@
   }
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from './diagnostics.svelte';
-  import { defaultCatalog, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
+  import { defaultCatalog, tagPresets, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
   const noteStyles:NoteStyle[]=['bold','italic','underline'];
@@ -293,7 +293,7 @@
     change();
     const hidden=pasted.items.some(o=>!matches(itemTags(o),filters));
     status='Pasted '+pasted.items.length+(pasted.items.length===1?' object':' objects')+
-      (hidden?' · Department filters hide some pasted content':'');
+      (hidden?' · Tag filters hide some pasted content':'');
   }
   function requestDelete(p:Page){if(!editing)return;pendingPage=p;menu=undefined;ask('Delete page');}
   async function deletePage(){
@@ -365,7 +365,7 @@
     if(restoringAccount)return;
     onlineMode=mode;
     onlineRepo=onlineProject?.repo??onlineRepo;
-    if(mode==='create')onlineNewName='';
+    if(mode==='create'){onlineNewName='';draftCatalog=[];selectedTagPreset='';}
     onlineError='';
     ask('Online project');
   }
@@ -464,12 +464,12 @@
     const repo=action==='reload' ? onlineProject?.repo : selectedRepo??onlineRepo.trim();
     if(!repo || (action==='save' && (welcome || onlineProject)))return;
     const newName=onlineNewName.trim();
-    if(action==='create' && !newName)return;
+    if(action==='create' && (!newName || invalidDraftTags()))return;
     onlineWorking=true;busy=true;onlineError='';
     try{
       if(action==='create'){
         if(!await discard())return;
-        const document=JSON.stringify({version:1,name:newName,pages:[page('Overview')] } satisfies Project);
+        const document=JSON.stringify({version:1,name:newName,catalog:saveDraftTags(),pages:[page('Overview')] } satisfies Project);
         const saved=await invoke<{sha:string;branch:string}>('online_save',{repo,branch:null,sha:null,document});
         await load(document,'',{repo,...saved,writable:true},true);
         onlineNewName='';
@@ -694,6 +694,14 @@
   const colors=$derived(Object.fromEntries(catalog.map(d=>[d.id,d.color])));
   const names=$derived(Object.fromEntries(catalog.map(d=>[d.id,d.name])));
   let draftName=$state(''),draftDescription=$state(''),draftCatalog=$state<typeof defaultCatalog>([]);
+  let selectedTagPreset=$state<keyof typeof tagPresets|''>('');
+  function applyTagPreset(){
+    if(!selectedTagPreset)return;
+    draftCatalog=addTagPreset(draftCatalog,selectedTagPreset);
+    selectedTagPreset='';
+  }
+  function invalidDraftTags(){return draftCatalog.some(tag=>!tag.name.trim());}
+  function saveDraftTags(){return draftCatalog.map(tag=>({...tag,name:tag.name.trim()}));}
   const userIcons=['👤','🦊','🐻','🐱','🐼','🐙','🌙','🌿','🎨','🎧'];
   let draftUsers=$state<ProjectUser[]>([]), editorId=$state('');
   let pickerUsers=$state<ProjectUser[]>([]), selectedUser=$state(''),registering=$state(false);
@@ -755,7 +763,7 @@
   }
   let section=$state(''), priorDepartments:typeof defaultCatalog=[],priorUsers:ProjectUser[]=[];
   function openSection(value:string){
-    priorDepartments=$state.snapshot(draftCatalog);priorUsers=$state.snapshot(draftUsers);section=value;
+    selectedTagPreset='';priorDepartments=$state.snapshot(draftCatalog);priorUsers=$state.snapshot(draftUsers);section=value;
   }
   function leaveSection(apply:boolean){
     if(!apply){draftCatalog=priorDepartments;draftUsers=priorUsers;}
@@ -767,7 +775,7 @@
     draftUsers=(project.users??[]).map(u=>({...u}));draftName=project.name;draftDescription=project.description??'';draftCatalog=catalog.map(d=>({...d}));ask('Project settings');
   }
   function applyOptions(close=true){
-    if(!editing || !validUsers || !draftName.trim() || draftCatalog.some(d=>!d.name.trim()))return;
+    if(!editing || !validUsers || !draftName.trim() || invalidDraftTags())return;
     const allowed=new Set(draftCatalog.map(d=>d.id));
     for(const p of [...project.pages,...project.trash??[]]){
       if(p.departments)p.departments=p.departments.filter(id=>allowed.has(id));
@@ -778,7 +786,7 @@
     }
     if(!onlineProject)project.users=draftUsers.map(u=>({...u,name:u.name.trim()}));
     project.name=draftName.trim();project.description=draftDescription.trim();
-    project.catalog=draftCatalog.map(d=>({...d,name:d.name.trim()}));setFilters(filters.filter(id=>allowed.has(id)));change();if(close)dialog.close();
+    project.catalog=saveDraftTags();setFilters(filters.filter(id=>allowed.has(id)));change();if(close)dialog.close();
   }
   let visible = $derived(board.items.filter(o=>{
     const b=bounds(o);
@@ -955,7 +963,7 @@
     const target=p?.items.find(o=>o.id===to.itemId);
     if(!p || (to.itemId && !target)){status='Link destination is missing.';return;}
     await navigate(p);
-    if(target){if(!matches(itemTags(target),filters)){status='Destination hidden by department filters.';return;}ids=[target.id];fit([target]);}
+    if(target){if(!matches(itemTags(target),filters)){status='Destination hidden by tag filters.';return;}ids=[target.id];fit([target]);}
   }
   function remember(o:Item, field:HTMLTextAreaElement) {
     range={id:o.id,start:field.selectionStart,end:field.selectionEnd};
@@ -1331,7 +1339,7 @@
     else void importImages([...e.dataTransfer.files],x,y);
   }
   function newProject(){section='';
-    creationError='';draftUsers=[];draftName='';draftDescription='';draftCatalog=defaultCatalog.map(d=>({...d}));ask('New project');
+    creationError='';draftUsers=[];draftName='';draftDescription='';draftCatalog=[];selectedTagPreset='';ask('New project');
   }
   function ask(type:string){dialogType=type;name='';dialog.showModal();}
   async function discard(){return !dirty || (isTauri()?await confirm('Discard unsaved changes?'):window.confirm('Discard unsaved changes?'));}
@@ -1347,12 +1355,12 @@
   }
   async function named(){
     if(dialogType==='New project'){
-      if(busy || !validUsers || !draftName.trim() || draftCatalog.some(d=>!d.name.trim()))return;
+      if(busy || !validUsers || !draftName.trim() || invalidDraftTags())return;
       busy=true;creationError='';
       try{
         if(!await discard())return;
         const p=page('Overview');
-        const next:typeof initial={version:1,users:draftUsers.map(u=>({...u,name:u.name.trim()})),name:draftName.trim(),description:draftDescription.trim(),catalog:draftCatalog.map(d=>({...d,name:d.name.trim()})),pages:[p]};
+        const next:typeof initial={version:1,users:draftUsers.map(u=>({...u,name:u.name.trim()})),name:draftName.trim(),description:draftDescription.trim(),catalog:saveDraftTags(),pages:[p]};
         const location=isTauri()?await save({defaultPath:next.name+'.tkv',filters:fileFilters}):'';
         if(location===null)return;
         if(location)await invoke('save_project',{path:location,document:JSON.stringify(next)});
@@ -1522,6 +1530,24 @@
   });
 </script>
 
+{#snippet tagEditor()}
+  <label>Tag preset
+    <select bind:value={selectedTagPreset}>
+      <option value="">Choose a preset</option>
+      {#each Object.keys(tagPresets) as preset}<option value={preset}>{preset}</option>{/each}
+    </select>
+  </label>
+  <button class="add-project-entry" type="button" disabled={!selectedTagPreset} onclick={applyTagPreset}>Add Preset Tags</button>
+  {#each draftCatalog as tag (tag.id)}
+    <div class="department-editor">
+      <input type="color" aria-label={'Color for '+tag.name} bind:value={tag.color}/>
+      <input required aria-label="Tag name" bind:value={tag.name}/>
+      <button type="button" title="Remove tag" aria-label={'Remove '+tag.name} onclick={()=>draftCatalog=draftCatalog.filter(other=>other.id!==tag.id)}>×</button>
+    </div>
+  {/each}
+  <button class="add-project-entry" type="button" onclick={()=>draftCatalog.push({id:crypto.randomUUID(),name:'New tag',color:'#8888bb'})}>Add New Tag</button>
+{/snippet}
+
 {#snippet updatesButton()}
   <button class="update-button" aria-label={updateLabel} title={updateLabel} disabled={!isTauri() || (!release && (checking || cooldown))} onclick={openUpdates}>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>
@@ -1580,7 +1606,7 @@
 {/snippet}
 {#snippet departmentPicker()}
   <details class="object-departments">
-    <summary>Departments</summary>
+    <summary>Tags</summary>
     <fieldset disabled={!editing}>
       <label><input type="checkbox" checked={picked.length>0 && picked.every(o=>o.inheritDepartment)}
         indeterminate={picked.some(o=>o.inheritDepartment) && picked.some(o=>!o.inheritDepartment)}
@@ -1814,7 +1840,7 @@
         {@const target=menu.page}
         {#if target.id!==current}<button onclick={()=>{void navigate(target);menu=undefined;}}>Open page</button>{/if}
         <button disabled={!editing} onclick={()=>{newPage(target);menu=undefined;}}>Add child page…</button>
-        <details class="object-departments"><summary>Departments</summary><fieldset disabled={!editing}>
+        <details class="object-departments"><summary>Tags</summary><fieldset disabled={!editing}>
         {#if target.parentId}<label><input type="checkbox" checked={target.departments===undefined} onchange={e=>{target.departments=e.currentTarget.checked?undefined:[...pageTags.get(target.id)??[]];change();}}/> Inherit from parent</label>{/if}
         {#each catalog as d}<label><input type="checkbox" checked={pageTags.get(target.id)?.includes(d.id)??false} onchange={e=>togglePageTag(target,d.id,e.currentTarget.checked)}/><i class="department-dot" style:background={d.color}></i>{d.name}</label>{/each}
         </fieldset></details>
@@ -1941,8 +1967,12 @@
         {#if onlineMode==='save'}<p>Save this project to a private GitHub repository and continue editing the online copy.</p>{/if}
         <form onsubmit={e=>{e.preventDefault();void accessOnline(onlineMode==='create'?'create':'save');}}>
           <label>Private repository<input required placeholder="owner/repository" bind:value={onlineRepo} disabled={busy}/></label>
-          {#if onlineMode==='create'}<label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>{/if}
-          <button disabled={busy || !onlineRepo.trim() || (onlineMode==='create' && !onlineNewName.trim())}>{onlineMode==='create'?'Create online project':'Save as Online'}</button>
+          {#if onlineMode==='create'}
+            <label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>
+            <details><summary>Tags</summary><fieldset disabled={busy}>{@render tagEditor()}</fieldset></details>
+            {#if invalidDraftTags()}<p>Enter a name for each tag.</p>{/if}
+          {/if}
+          <button disabled={busy || !onlineRepo.trim() || (onlineMode==='create' && (!onlineNewName.trim() || invalidDraftTags()))}>{onlineMode==='create'?'Create online project':'Save as Online'}</button>
         </form>
       {/if}
       {/if}
@@ -1981,7 +2011,7 @@
       {#if !section}<fieldset disabled={!creating && !editing}><label>Project name<input required bind:value={draftName}/></label>
       <label>Description<textarea bind:value={draftDescription}></textarea></label>
       </fieldset>
-      <button class="add-project-entry" type="button" onclick={()=>openSection('Departments')}>Departments　›</button>
+      <button class="add-project-entry" type="button" onclick={()=>openSection('Tags')}>Tags　›</button>
       {#if onlineProject}<button class="add-project-entry" type="button" disabled={!account} onclick={()=>{dialogType='GitHub users';}}>Users on GitHub　›</button>
       {:else}<button class="add-project-entry" type="button" onclick={()=>openSection('Users')}>Local profiles　›</button>{/if}
       {#if !creating && onlineProject}
@@ -1996,12 +2026,8 @@
           {#if projectCacheError}<p role="alert">{projectCacheError}</p>{/if}
         </section>
       {/if}
-      {:else if section==='Departments'}<fieldset disabled={!creating && !editing}>
-      {#each draftCatalog as d (d.id)}
-        <div class="department-editor"><input type="color" aria-label={'Color for '+d.name} bind:value={d.color}/>
-        <input required aria-label="Department name" bind:value={d.name}/><button type="button" title="Remove department" aria-label={'Remove '+d.name} onclick={()=>draftCatalog=draftCatalog.filter(v=>v.id!==d.id)}>×</button></div>
-      {/each}
-      <button class="add-project-entry" type="button" onclick={()=>draftCatalog.push({id:crypto.randomUUID(),name:'New department',color:'#8888bb'})}>Add New Department</button>
+      {:else if section==='Tags'}<fieldset disabled={!creating && !editing}>
+      {@render tagEditor()}
       </fieldset>{:else}<fieldset disabled={!creating && !editing}>
       {#each draftUsers as u (u.id)}
         <div class="department-editor"><select aria-label={'Icon for '+u.name} bind:value={u.icon}>{#each userIcons as icon}<option value={icon}>{icon}</option>{/each}</select>
@@ -2015,7 +2041,7 @@
       {#if creating && !section && creationError}<p role="alert">{creationError}</p>{/if}
       <div class="settings-footer">
         {#if creating && !section}<button type="button" onclick={()=>dialog.close()}>Cancel</button>{/if}
-        <button disabled={busy || !validUsers || (!creating && !editing) || ((!section || !creating) && !draftName.trim()) || draftCatalog.some(d=>!d.name.trim())}>{creating && !section?'Create':'Apply changes'}</button>
+        <button disabled={busy || !validUsers || (!creating && !editing) || ((!section || !creating) && !draftName.trim()) || invalidDraftTags()}>{creating && !section?'Create':'Apply changes'}</button>
         {#if section}<button class="settings-back" type="button" onclick={()=>leaveSection(false)}>Back</button>{/if}
       </div>
     </form>

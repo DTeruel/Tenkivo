@@ -130,7 +130,7 @@
   {#if !single}<label>Format<select bind:value={mode} disabled={busy} onchange={()=>{cursor=0;error='';}}><option value="pdf">PDF document</option>{#if isTauri()}<option value="zip">Project archive (.zip)</option>{/if}</select></label>{/if}
   {#if mode==='pdf'}
     <label>Page layout<select bind:value={tile} disabled={busy} onchange={()=>cursor=0}><option value={false}>Fit canvas on one A4 sheet</option><option value={true}>Tile at original scale across A4 sheets</option></select></label>
-    {#if filters.length}<label class="export-check"><input type="checkbox" bind:checked={filtered} onchange={()=>cursor=0}/> Apply active department filters</label>{/if}
+    {#if filters.length}<label class="export-check"><input type="checkbox" bind:checked={filtered} onchange={()=>cursor=0}/> Apply active tag filters</label>{/if}
     {#if sheets[cursor]}<div class="pdf-preview">{@render sheet(sheets[cursor],cursor,false)}</div>
     <div class="preview-nav"><button disabled={cursor===0} onclick={()=>cursor--}>Previous</button><span>{cursor+1} / {sheets.length}</span><button disabled={cursor>=sheets.length-1} onclick={()=>cursor++}>Next</button></div>{/if}
     {#if loading}<p>Loading project images…</p>{/if}

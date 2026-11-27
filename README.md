@@ -46,7 +46,7 @@ Play audio directly on the canvas. Drop a recording and choose **Copy to project
 
 ## Release 0.9.1
 
-Use File → Close to return to the welcome screen. Canvas Snapping is available in Settings both before and after opening a project. Hold Shift while dragging a corner to preserve proportions. Use the plus beside Departments in Project settings to add a department.
+Use File → Close to return to the welcome screen. Canvas Snapping is available in Settings both before and after opening a project. Hold Shift while dragging a corner to preserve proportions. Open **Project settings → Tags** to rename, recolor, add, or remove tags.
 
 ## Release 0.9.0
 
@@ -62,7 +62,7 @@ Navigation history now opens above the canvas footer beside Undo and Redo. File 
 
 ## Release 0.8.0
 
-**File** contains **New project**, **New Template Project**, **Open**, **Save** and **Export**. Save and Export also have dedicated toolbar buttons. New projects start with a form for the name, description and department colors. Creating a template opens **Template Project** with World direction, Traversal and Canvas benchmark.
+**File** contains **New project**, **New Template Project**, **Open**, **Save** and **Export**. Save and Export also have dedicated toolbar buttons. New projects let you add editable tag presets, create custom tags, and choose their colors. Creating a template opens **Template Project** with World direction, Traversal and Canvas benchmark.
 
 Use the plus beside a page to add a child. Open its context menu to change departments or export the canvas. Navigation history and Trash live in the Pages dock. Undo and Redo are at the bottom of the canvas. The canvas plus and its empty-space context menu offer the available element types.
 
@@ -84,7 +84,7 @@ The project toolbar centers department filters and places a navigation-history m
 
 ## Release 0.5.0
 
-Right-click objects and expand **Departments** to inspect or change their memberships. A mixed checkbox means only some selected objects belong to that department. Choose **Inherit from page** to follow page assignments.
+Right-click objects and expand **Tags** to inspect or change their memberships. A mixed checkbox means only some selected objects belong to that department. Choose **Inherit from page** to follow page assignments.
 
 Undo and redo are available in edit mode from the project toolbar. Use **Ctrl/Cmd + Z** to undo and **Ctrl/Cmd + Shift + Z** or **Ctrl + Y** to redo. The current project session keeps up to 100 edit steps. Moving, resizing or rotating a selection is one step. Saving preserves history; opening or creating another project starts a new history. Undoing an attachment insertion removes its canvas card and preserves the file on disk.
 

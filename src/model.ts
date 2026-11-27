@@ -2,6 +2,26 @@ export const departments = ['Design', 'Programming', 'Art', 'Sound'] as const;
 export type Department = string;
 export interface DepartmentInfo {id:string;name:string;color:string}
 export const defaultCatalog:DepartmentInfo[]=departments.map((id,i)=>({id,name:id,color:['#bd9b56','#799ccf','#71aa8d','#b48fbd'][i]}));
+export const tagPresets = {
+  'Video Games': ['Design','Programming','Art','Sound','QA'],
+  'Apps & Web': ['Product','UX Research','UI Design','Frontend','Backend','QA'],
+  'Audiovisual': ['Script','Storyboard','Production','Editing','Sound'],
+  'General Project': ['Planning','Research','Design','Implementation','Review'],
+  'Status': ['Idea','In Progress','Needs Review','Approved','On Hold'],
+  'Content Type': ['Reference','Specification','Diagram','Decision','Open Question'],
+  'Milestones': ['Prototype','MVP','Beta','Launch','Post-launch'],
+} as const;
+
+export function addTagPreset(catalog:DepartmentInfo[],preset:keyof typeof tagPresets):DepartmentInfo[]{
+  const palette=['#bd9b56','#799ccf','#71aa8d','#b48fbd','#cf827a','#77aab5'];
+  const names=new Set(catalog.map(tag=>tag.name.trim().toLowerCase()));
+  const ids=new Set(catalog.map(tag=>tag.id));
+  const newTags=tagPresets[preset].filter(name=>!names.has(name.toLowerCase())).map((name,index)=>{
+    const standard=defaultCatalog.find(tag=>tag.name===name && !ids.has(tag.id));
+    return standard?{...standard}:{id:crypto.randomUUID(),name,color:palette[(catalog.length+index)%palette.length]};
+  });
+  return [...catalog,...newTags];
+}
 export type Kind = 'Note' | 'Image' | 'Frame' | 'Page link' | 'Attachment' | 'Web link' | 'Drawing';
 export interface Attachment {path:string;local:boolean;folder:boolean;shared?:{sha256:string;blob?:string}}
 export function mediaKind(attachment:Attachment){
