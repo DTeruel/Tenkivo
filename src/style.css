@@ -92,11 +92,14 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .app-menu .image-title {padding:6px 8px;margin:0;color:var(--ink)}
 .export-result {color:var(--ink);text-decoration:underline;text-underline-offset:2px;padding:2px 4px}
 .studio.launcher {display:block;overflow:auto}
-.welcome {width:min(800px,92%);margin:0 auto;padding:clamp(36px,9vh,100px) 18px}
+.welcome {width:min(1000px,92%);margin:0 auto;padding:clamp(36px,9vh,100px) 18px}
 .welcome-head,.welcome-actions,.recent-project {display:flex;align-items:center;gap:10px}
 .welcome-head {justify-content:space-between}
 .welcome-head h1 {font:36px Georgia,serif;margin:0}
-.welcome-actions {margin:24px 0 40px}
+.welcome-projects {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:20px;margin-top:28px;align-items:start}
+.welcome-project-panel {min-width:0;padding:20px;border:1px solid var(--line);border-radius:10px}
+.welcome-project-panel h3 {margin:12px 0 8px;font-size:13px}
+.welcome-actions {flex-wrap:wrap;margin:0 0 18px;gap:6px}
 .welcome-actions button,.recent-project {border:1px solid var(--line);background:var(--paper);border-radius:6px}
 .welcome h2 {margin:0 0 12px}
 .recent-project {margin-bottom:6px;padding:7px 10px}

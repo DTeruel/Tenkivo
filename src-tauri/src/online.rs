@@ -2,11 +2,12 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{path::PathBuf, sync::Mutex};
 use tauri::State;
 
 pub mod access;
+mod session_store;
 
 const API: &str = "https://api.github.com";
 const DOC: &str = "project.tkv";
@@ -21,15 +22,19 @@ pub fn github_client_id() -> Option<&'static str> {
         .or(Some(TENKIVO_GITHUB_CLIENT_ID))
 }
 
-#[derive(Default)]
-pub struct Online(Mutex<Session>);
+pub struct Online(Mutex<Session>, PathBuf);
+
+impl Online {
+    pub fn new(data_dir: PathBuf) -> Self {
+        Self(Mutex::new(Session::default()), data_dir)
+    }
+}
 
 #[derive(Default)]
 struct Session {
     generation: u64,
     pending: Option<Device>,
-    token: Option<String>,
-    account_id: Option<u64>,
+    credentials: Option<SavedSession>,
 }
 
 #[derive(Clone)]
@@ -55,10 +60,47 @@ pub struct DevicePrompt {
     interval: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Account {
     id: u64,
     login: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct SavedSession {
+    account: Account,
+    client_id: String,
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_at: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct Grant {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: Option<u64>,
+}
+
+impl Grant {
+    fn into_session(self, account: Account, client_id: String) -> SavedSession {
+        SavedSession {
+            account,
+            client_id,
+            access_token: self.access_token,
+            refresh_token: self.refresh_token,
+            expires_at: self
+                .expires_in
+                .map(|seconds| now_seconds().saturating_add(seconds)),
+        }
+    }
+}
+
+fn now_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[derive(Serialize)]
@@ -127,7 +169,10 @@ pub async fn online_sign_in(
     let response = client()?
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
-        .query(&[("client_id", &client_id)])
+        .query(&[
+            ("client_id", client_id.as_str()),
+            ("scope", "offline_access"),
+        ])
         .send()
         .await
         .map_err(connection_error)?;
@@ -206,11 +251,13 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
             .map_err(connection_error)?,
     )?;
     let data: Value = response.json().await.map_err(connection_error)?;
-    if let Some(token) = data["access_token"].as_str() {
+    if data["access_token"].is_string() {
+        let grant: Grant = serde_json::from_value(data)
+            .map_err(|_| "GitHub returned an invalid sign-in response.")?;
         let account: Account = checked(
             client
                 .get(format!("{API}/user"))
-                .bearer_auth(token)
+                .bearer_auth(&grant.access_token)
                 .send()
                 .await
                 .map_err(connection_error)?,
@@ -218,12 +265,16 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
         .json()
         .await
         .map_err(connection_error)?;
+        let credentials = grant.into_session(account.clone(), device.client_id);
+        let file = session_store::open(&state.1).await?;
         let mut session = state.0.lock().unwrap();
         if session.generation != generation {
             return Err("Sign-in was cancelled.".into());
         }
-        session.token = Some(token.to_owned());
-        session.account_id = Some(account.id);
+        if let Some(file) = &file {
+            file.write(&credentials)?;
+        }
+        session.credentials = Some(credentials);
         session.pending = None;
         return Ok(Poll::SignedIn { account });
     }
@@ -251,22 +302,97 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
 }
 
 #[tauri::command]
-pub fn online_sign_out(state: State<'_, Online>) {
+pub async fn online_restore(state: State<'_, Online>) -> Result<Option<Account>, String> {
+    let Some(file) = session_store::open(&state.1).await? else {
+        return Ok(None);
+    };
     let mut session = state.0.lock().unwrap();
+    if session.pending.is_some() || session.credentials.is_some() {
+        return Ok(session
+            .credentials
+            .as_ref()
+            .map(|current| current.account.clone()));
+    }
+    session.credentials = file.read()?;
+    Ok(session
+        .credentials
+        .as_ref()
+        .map(|current| current.account.clone()))
+}
+
+#[tauri::command]
+pub async fn online_sign_out(state: State<'_, Online>) -> Result<(), String> {
+    let file = session_store::open(&state.1).await?;
+    let mut session = state.0.lock().unwrap();
+    if let Some(file) = &file {
+        file.clear()?;
+    }
     *session = Session {
         generation: session.generation + 1,
         ..Session::default()
     };
+    Ok(())
 }
 
-fn token(state: &Online) -> Result<String, String> {
-    state
-        .0
-        .lock()
-        .unwrap()
-        .token
-        .clone()
-        .ok_or_else(|| "Sign in with GitHub first.".into())
+async fn token(state: &Online) -> Result<String, String> {
+    let file = session_store::open(&state.1).await?;
+    let (generation, mut credentials) = {
+        let session = state.0.lock().unwrap();
+        (
+            session.generation,
+            session
+                .credentials
+                .clone()
+                .ok_or("Sign in with GitHub first.")?,
+        )
+    };
+    if let Some(file) = &file {
+        let saved = file
+            .read()?
+            .ok_or("The GitHub session was signed out. Sign in again.")?;
+        if saved.account.id != credentials.account.id || saved.client_id != credentials.client_id {
+            return Err("The GitHub account changed in another window. Sign in again.".into());
+        }
+        credentials = saved;
+    }
+
+    if credentials
+        .expires_at
+        .is_some_and(|until| until <= now_seconds().saturating_add(120))
+    {
+        let refresh = credentials
+            .refresh_token
+            .as_deref()
+            .ok_or("Your GitHub session expired. Sign in again.")?;
+        let response = client()?
+            .post("https://github.com/login/oauth/access_token")
+            .header("Accept", "application/json")
+            .form(&[
+                ("client_id", credentials.client_id.as_str()),
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh),
+            ])
+            .send()
+            .await
+            .map_err(connection_error)?;
+        let data: Value = checked(response)?.json().await.map_err(connection_error)?;
+        if !data["access_token"].is_string() {
+            return Err("GitHub could not renew this session. Sign out and sign in again.".into());
+        }
+        let grant: Grant = serde_json::from_value(data)
+            .map_err(|_| "GitHub returned an invalid session renewal response.")?;
+        credentials = grant.into_session(credentials.account, credentials.client_id);
+        if let Some(file) = &file {
+            file.write(&credentials)?;
+        }
+    }
+    let mut session = state.0.lock().unwrap();
+    if generation != session.generation {
+        return Err("The GitHub session changed. Try again.".into());
+    }
+    let access_token = credentials.access_token.clone();
+    session.credentials = Some(credentials);
+    Ok(access_token)
 }
 
 fn repository_url(repo: &str) -> Result<String, String> {
@@ -333,7 +459,7 @@ pub async fn online_open(
     repo: String,
     branch: Option<String>,
 ) -> Result<RemoteProject, String> {
-    let token = token(&state)?;
+    let token = token(&state).await?;
     let client = client()?;
     let url = repository_url(&repo)?;
     let details = repository(&client, &token, &url).await?;
@@ -398,7 +524,7 @@ pub async fn online_save(
             document.len().div_ceil(1024)
         ));
     }
-    let token = token(&state)?;
+    let token = token(&state).await?;
     let client = client()?;
     let url = repository_url(&repo)?;
     let details = repository(&client, &token, &url).await?;

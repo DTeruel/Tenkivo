@@ -231,6 +231,8 @@
   type OnlineProject={repo:string;branch:string;sha:string;writable:boolean};
   type DiscoveredProject=Pick<OnlineProject,'repo'|'writable'>;
   let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
+  let restoringAccount=$state(isTauri()),restoreAccountError=$state('');
+  let onlineMode=$state<'manage'|'open'|'create'>('manage');
   let discoveredProjects=$state<DiscoveredProject[]>([]),discovering=$state(false),discoveryError=$state('');
   let discoveryAttempt=0;
   let onlineRepo=$state(localStorage.getItem('studio-online-repo')??'');
@@ -253,11 +255,14 @@
   }
 
   function showGitHubAccount(){
-    onlineError='';
+    if(restoringAccount)return;
+    onlineError=restoreAccountError;
     ask('GitHub account');
   }
 
-  function showOnline(){
+  function showOnline(mode:'manage'|'open'|'create'='manage'){
+    if(restoringAccount)return;
+    onlineMode=mode;
     onlineRepo=onlineProject?.repo??onlineRepo;
     onlineError='';
     ask('Online project');
@@ -266,7 +271,7 @@
     const id=configuredClientId || clientId.trim();
     const attempt=++signInAttempt;
     clearTimeout(signInTimer);
-    onlineWorking=true;onlineError='';deviceCode='';
+    onlineWorking=true;onlineError='';restoreAccountError='';deviceCode='';
     try{
       const prompt=await invoke<{user_code:string;interval:number}>('online_sign_in',{clientId:id});
       if(attempt!==signInAttempt)return;
@@ -290,17 +295,30 @@
       }
     }catch(error){if(attempt===signInAttempt){deviceCode='';onlineError=String(error);}}
   }
+  async function restoreGitHubAccount(){
+    try{
+      account=await invoke<GitHubAccount|null>('online_restore')??undefined;
+      if(account){
+        commit();typingField=null;
+        if(editing && !onlineProject && onlineIdentity)editorId=onlineIdentity.id;
+        void discoverProjects();
+      }
+    }catch(error){restoreAccountError=String(error);}
+    finally{restoringAccount=false;}
+  }
   async function signOut(){
     if(onlineWorking || busy)return;
-    if(onlineProject && dirty){onlineError='Save your changes or export a local copy before signing out.';return;}
     ++signInAttempt;clearTimeout(signInTimer);deviceCode='';onlineError='';
+    onlineWorking=true;
     try{
       await invoke('online_sign_out');
       if(editing && editorId===onlineIdentity?.id){commit();typingField=null;toggleEdit();}
       account=undefined;
+      restoreAccountError='';
       ++discoveryAttempt;discoveredProjects=[];discovering=false;discoveryError='';
       if(onlineProject)onlineProject={...onlineProject,writable:false};
     }catch(error){onlineError=String(error);}
+    finally{onlineWorking=false;}
   }
   function checkOnlineAttachments(doc:Project){
     const pages=[...doc.pages,...doc.trash??[],...(doc.pageHistory??[]).map(version=>version.page)];
@@ -1224,6 +1242,7 @@
   }
   onMount(()=>{
     if(isTauri())void invoke<string|null>('github_client_id').then(id=>{configuredClientId=id??'';}).catch(()=>{});
+    if(isTauri())void restoreGitHubAccount();
     if(isTauri())void getVersion().then(version=>{
       appVersion=version;
       recordActivity('Startup','Tenkivo '+version+' started.');
@@ -1272,12 +1291,12 @@
 
 {#snippet gitHubAccountButton()}
   {#if isTauri()}
-    <button title="GitHub account" onclick={showGitHubAccount}>{account?'@'+account.login:'Sign in with GitHub'}</button>
+    <button title="GitHub account" disabled={restoringAccount} onclick={showGitHubAccount}>{restoringAccount?'Restoring session…':account?'@'+account.login:'Sign in with GitHub'}</button>
   {/if}
 {/snippet}
 
 {#snippet discoverableProjects()}
-  <div class="row"><h3>Online projects</h3><button disabled={discovering || busy} onclick={discoverProjects}>Refresh</button></div>
+  <div class="row"><h3>Available projects</h3><button disabled={discovering || busy} onclick={discoverProjects}>Refresh</button></div>
   {#if discovering}<p role="status">Finding your GitHub projects…</p>{/if}
   {#if discoveryError}<p role="alert">{discoveryError}</p>{/if}
   {#each discoveredProjects as entry (entry.repo)}
@@ -1317,19 +1336,37 @@
   {#if welcome}
     <main class="welcome">
       <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions">{@render gitHubAccountButton()}<button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}{@render logsButton()}</div></div>
-      <div class="welcome-actions"><button disabled={launching || busy} onclick={newProject}>New project…</button><button disabled={launching || busy} onclick={openFile}>Open project…</button>{#if isTauri()}<button disabled={launching || busy} onclick={showOnline}>Online project…</button>{/if}</div>
       {#if status}<p role="status">{status}</p>{/if}
-      {#if account}{@render discoverableProjects()}{/if}
-      <h2>Recent projects</h2>
       {#if welcomeError}<p role="alert">{welcomeError}</p>{/if}
       {#if launching}<p role="status">Opening project…</p>{/if}
-      {#each recent as entry (entry.path)}
-        {@const state=availability[entry.path]??'Checking…'}
-        <div class="recent-project"><button disabled={launching || busy || state!=='Available'} onclick={()=>openRecent(entry.path)}><strong>{entry.name}</strong><small>{entry.path}</small></button>
-          <span class:available={state==='Available'}><b aria-hidden="true">{state==='Available'?'✓':state==='Checking…'?'…':'⚠'}</b> {state}</span>
-          {#if state==='Missing' || state==='Unavailable'}<button title="Remove from recent projects" onclick={()=>forgetProject(entry.path)}>Remove</button>{/if}
-        </div>
-      {:else}<p>No recent projects.</p>{/each}
+      <div class="welcome-projects">
+        <section class="welcome-project-panel">
+          <h2>Local projects</h2>
+          <div class="welcome-actions">
+            <button disabled={launching || busy} onclick={newProject}>New local project…</button>
+            <button disabled={launching || busy} onclick={openFile}>Open local project…</button>
+          </div>
+          <h3>Recent local projects</h3>
+          {#each recent as entry (entry.path)}
+            {@const state=availability[entry.path]??'Checking…'}
+            <div class="recent-project"><button disabled={launching || busy || state!=='Available'} onclick={()=>openRecent(entry.path)}><strong>{entry.name}</strong><small>{entry.path}</small></button>
+              <span class:available={state==='Available'}><b aria-hidden="true">{state==='Available'?'✓':state==='Checking…'?'…':'⚠'}</b> {state}</span>
+              {#if state==='Missing' || state==='Unavailable'}<button title="Remove from recent projects" onclick={()=>forgetProject(entry.path)}>Remove</button>{/if}
+            </div>
+          {:else}<p>No recent local projects.</p>{/each}
+        </section>
+        {#if isTauri()}
+          <section class="welcome-project-panel">
+            <h2>Online projects</h2>
+            <div class="welcome-actions">
+              <button disabled={launching || busy || restoringAccount} onclick={()=>showOnline('create')}>New online project…</button>
+              <button disabled={launching || busy || restoringAccount} onclick={()=>showOnline('open')}>Open online project…</button>
+            </div>
+            {#if account}{@render discoverableProjects()}
+            {:else if !restoringAccount}<p>Sign in with GitHub to use online projects.</p>{/if}
+          </section>
+        {/if}
+      </div>
     </main>
   {:else}
   <header>
@@ -1338,7 +1375,7 @@
         <button onclick={()=>{fileMenu.open=false;newProject();}}>New…</button>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void createTemplate();}}>New Template…</button>
         <button onclick={()=>{fileMenu.open=false;void openFile();}}>Open…</button>
-        {#if isTauri()}<button disabled={busy} onclick={()=>{fileMenu.open=false;showOnline();}}>Online project…</button>{/if}
+        {#if isTauri()}<button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline();}}>Online project…</button>{/if}
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close</button>
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveFile();}}>Save</button>
@@ -1591,7 +1628,7 @@
     {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
-    <h2>{(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType}</h2>{#if dialogType==='Internal link' && active}
+    <h2>{dialogType==='Online project' && onlineMode!=='manage'?(onlineMode==='create'?'New online project':'Open online project'):(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType}</h2>{#if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
       {#if draftRange}<label>Link to<select bind:value={linkType}><option value="project">Page or object</option><option value="web">Website</option></select></label>{/if}
@@ -1612,15 +1649,15 @@
         <button disabled={busy} onclick={signOut}>Sign out</button>
       {:else}
       {#if onlineProject}<p>Current project · {onlineProject.repo} ({onlineProject.branch})</p>{/if}
-      {@render discoverableProjects()}
+      {#if onlineMode!=='create'}{@render discoverableProjects()}{/if}
       <label>Private repository<input placeholder="owner/repository" bind:value={onlineRepo} disabled={onlineWorking}/></label>
-      <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>
-      {#if welcome}
+      {#if onlineMode!=='create'}<button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>{/if}
+      {#if onlineMode==='create'}
         <form onsubmit={e=>{e.preventDefault();void accessOnline('create');}}>
           <label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>
           <button disabled={busy || !onlineRepo.trim() || !onlineNewName.trim()}>Create online project</button>
         </form>
-      {:else if !onlineProject}
+      {:else if !welcome && !onlineProject && onlineMode==='manage'}
         <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('publish')}>Publish a copy</button>
       {:else if onlineProject}
         <button disabled={busy} onclick={()=>accessOnline('reload')}>Reload from GitHub</button>

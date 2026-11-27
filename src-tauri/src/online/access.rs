@@ -64,7 +64,7 @@ pub struct DiscoveredProject {
 
 #[tauri::command]
 pub async fn online_discover(state: State<'_, Online>) -> Result<Vec<DiscoveredProject>, String> {
-    let token = token(&state)?;
+    let token = token(&state).await?;
     let client = client()?;
     let installations: Vec<Installation> = pages(
         &client,
@@ -115,13 +115,16 @@ async fn admin_context(
     state: &Online,
     repo: &str,
 ) -> Result<(Client, String, String, Repository, u64), String> {
-    let (token, account_id) = {
+    let account_id = {
         let session = state.0.lock().unwrap();
-        (
-            session.token.clone().ok_or("Sign in with GitHub first.")?,
-            session.account_id.ok_or("Sign in with GitHub first.")?,
-        )
+        session
+            .credentials
+            .as_ref()
+            .ok_or("Sign in with GitHub first.")?
+            .account
+            .id
     };
+    let token = token(state).await?;
     let client = client()?;
     let url = repository_url(repo)?;
     let repo = repository(&client, &token, &url).await?;
@@ -233,7 +236,7 @@ pub async fn online_find_user(
     state: State<'_, Online>,
     login: String,
 ) -> Result<VerifiedUser, String> {
-    find_user(&client()?, &token(&state)?, &login).await
+    find_user(&client()?, &token(&state).await?, &login).await
 }
 
 #[tauri::command]

@@ -152,11 +152,11 @@ fn main() {
         }
     }
     tauri::Builder::default()
-        .manage(online::Online::default())
         .setup(|app| {
+            use tauri::Manager;
+            app.manage(online::Online::new(app.path().app_local_data_dir()?));
             #[cfg(windows)]
             {
-                use tauri::Manager;
                 use webview2_com::{
                     AcceleratorKeyPressedEventHandler,
                     Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3,
@@ -196,6 +196,7 @@ fn main() {
             online::github_client_id,
             online::online_sign_in,
             online::online_poll,
+            online::online_restore,
             online::online_sign_out,
             online::online_open,
             online::online_save,
