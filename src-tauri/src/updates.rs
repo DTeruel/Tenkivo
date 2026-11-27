@@ -232,8 +232,12 @@ pub fn cleanup_after_update() {
     {
         return;
     }
-    let Ok(executable) = env::current_exe() else {
-        return;
+    let executable = match env::current_exe() {
+        Ok(path) => path,
+        Err(error) => {
+            crate::diagnostics::error("Clean up portable update", error);
+            return;
+        }
     };
     let staged_name = match executable.file_name().and_then(|name| name.to_str()) {
         Some(PORTABLE) => STAGED,
@@ -247,7 +251,15 @@ pub fn cleanup_after_update() {
             Err(error) if matches!(error.raw_os_error(), Some(5 | 32 | 33)) => {
                 std::thread::sleep(Duration::from_millis(100));
             }
-            Err(_) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                crate::diagnostics::error("Clean up portable update", error);
+                return;
+            }
         }
     }
+    crate::diagnostics::error(
+        "Clean up portable update",
+        "The staged executable is still in use.",
+    );
 }

@@ -11,16 +11,17 @@
   import {getCurrentWebview} from '@tauri-apps/api/webview';
   import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
-  import {invoke,diagnostics,recordActivity,recordError} from './diagnostics.svelte';
+  import {invoke,diagnostics,recordActivity,recordError,collectNativeDiagnostics} from './diagnostics.svelte';
   import GitHubProjectUsers from './GitHubProjectUsers.svelte';
   let showingLogHistory=$state(false);
   function showLogs(history=false){
     showingLogHistory=history;
 
     if(!dialog.open)ask('Editor logs');
+    if(!history && dialogType==='Editor logs')diagnostics.unreadErrors=0;
   }
   import { isTauri } from '@tauri-apps/api/core';
-  import { open, save, confirm } from '@tauri-apps/plugin-dialog';
+  import { open, save, confirm } from './diagnostics.svelte';
   import { defaultCatalog, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
@@ -1481,6 +1482,15 @@
     if(e.key==='Escape'){inline='';ids=[];}
   }
   onMount(()=>{
+    let diagnosticsTimer:ReturnType<typeof setInterval>|undefined;
+    let collectingDiagnostics=false;
+    const collect=()=>{
+      if(collectingDiagnostics)return;
+      collectingDiagnostics=true;
+      void collectNativeDiagnostics().catch(()=>clearInterval(diagnosticsTimer))
+        .finally(()=>{collectingDiagnostics=false;});
+    };
+    if(isTauri()){diagnosticsTimer=setInterval(collect,2000);collect();}
     if(isTauri())void invoke<string|null>('github_client_id').then(id=>{configuredClientId=id??'';}).catch(()=>{});
     const restoreFrame=isTauri()?requestAnimationFrame(()=>{if(!restoreSkipped)void restoreGitHubAccount();}):undefined;
     if(isTauri())void getVersion().then(version=>{
@@ -1495,12 +1505,12 @@
       if(welcome || payload.type!=='drop')return;
       const r=viewport.getBoundingClientRect(),x=payload.position.x/devicePixelRatio-r.left,y=payload.position.y/devicePixelRatio-r.top;
       if(x>=0 && y>=0 && x<=r.width && y<=r.height)offerFiles(payload.paths,(x-tx)/zoom,(y-ty)/zoom);
-    }):undefined;
+    }).catch(error=>{recordError('Drag and drop listener',error);return undefined;}):undefined;
     updateChecksActive=isTauri();
     if(updateChecksActive)void invoke<boolean>('update_status').then(failed=>{
       if(failed){
         status='Update could not replace the executable. Close other copies and try again.';
-        recordActivity('Updates',status,'warning');
+        recordError('Updates',status);
         scheduleUpdateCheck();
       }else void checkUpdates();
     }).catch(()=>{void checkUpdates();});
@@ -1511,7 +1521,7 @@
     const refresh=()=>{if(welcome)void checkRecent();};
     window.addEventListener('focus',refresh);
     window.addEventListener('beforeunload',before);
-    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);void listener?.then(stop=>stop());window.removeEventListener('beforeunload',before);};
+    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);clearInterval(diagnosticsTimer);void listener?.then(stop=>stop?.()).catch(error=>recordError('Drag and drop listener',error));window.removeEventListener('beforeunload',before);};
   });
 </script>
 
@@ -1523,7 +1533,10 @@
 {/snippet}
 
 {#snippet logsButton()}
-  <button aria-label="Editor logs" title="Editor logs" onclick={()=>showLogs()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
+  {@const label=diagnostics.unreadErrors?'Editor logs · '+diagnostics.unreadErrors+' new '+(diagnostics.unreadErrors===1?'error':'errors'):'Editor logs'}
+  <button class="update-button" aria-label={label} title={label} onclick={()=>showLogs()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+    {#if diagnostics.unreadErrors}<span class="update-badge log-badge" aria-hidden="true"></span>{/if}
+  </button>
 {/snippet}
 
 {#snippet gitHubAccountButton()}

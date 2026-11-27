@@ -1,11 +1,16 @@
 <script lang="ts">
   import {convertFileSrc} from '@tauri-apps/api/core';
-  import {invoke} from './diagnostics.svelte';
+  import {invoke,recordError} from './diagnostics.svelte';
   import {materializeAttachment} from './sharedAttachment';
   import type {Attachment} from './model';
 
   let {project,attachment,name,kind,repo}:{kind:"audio"|"video";project:string;attachment:Attachment;name:string;repo?:string}=$props();
   let failed=$state('');
+  function playbackError(event:Event,url:string){
+    failed=url;
+    const failure=(event.currentTarget as HTMLMediaElement).error;
+    recordError('Media playback',kind+' could not be loaded'+(failure?' (code '+failure.code+'): '+failure.message:'.'));
+  }
   let source=$derived(materializeAttachment(attachment,repo).then(ready=>invoke<string>('attachment_media',{project,attachment:ready})).then(file=>convertFileSrc(file)));
 </script>
 
@@ -15,10 +20,10 @@
   {#if kind==='video'}
     <!-- svelte-ignore a11y_media_has_caption (user-provided local video) -->
     <video controls playsinline preload="metadata" src={url} aria-label={'Play '+name}
-      onerror={()=>failed=url} onloadedmetadata={()=>failed=''}></video>
+      onerror={event=>playbackError(event,url)} onloadedmetadata={()=>failed=''}></video>
   {:else}
   <audio controls preload="none" src={url} aria-label={'Play '+name}
-    onerror={()=>failed=url} onloadedmetadata={()=>failed=''}></audio>
+    onerror={event=>playbackError(event,url)} onloadedmetadata={()=>failed=''}></audio>
   {/if}
   {#if failed===url}<small>{kind==='video'?'Video':'Audio'} unavailable. Open the file externally or relink it in the inspector.</small>{/if}
 {:catch}

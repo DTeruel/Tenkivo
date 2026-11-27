@@ -51,7 +51,10 @@ fn move_entry(source: &Path, destination: &Path, matches_type: fn(&fs::Metadata)
         fs::rename(source, destination)
     })();
     if let Err(error) = result {
-        eprintln!("Could not migrate {}: {error}", source.display());
+        crate::diagnostics::error(
+            "Migrate application data",
+            format!("{}: {error}", source.display()),
+        );
     }
 }
 
@@ -67,7 +70,7 @@ fn migrate_session(legacy: &Path, session_dir: &Path) {
         Ok(_) => return,
         Err(error) if error.kind() == ErrorKind::NotFound => None,
         Err(error) => {
-            eprintln!("Could not open the legacy GitHub session lock: {error}");
+            crate::diagnostics::error("Open legacy GitHub session lock", error);
             return;
         }
     };

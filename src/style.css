@@ -45,6 +45,7 @@ header nav{margin-left:0}.settings-button{margin-left:auto}
 
 .app-actions{margin-left:auto;display:flex;align-items:center;gap:3px}.app-actions .settings-button{margin:0}.app-actions svg{display:block;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .update-button{position:relative}
+.log-badge.update-badge{background:light-dark(#c02030,#ff6776)}
 .update-badge{position:absolute;top:2px;right:5px;width:10px;height:10px;border:2px solid var(--panel);border-radius:50%;background:#170ca3;background:light-dark(#4338ca,#7dd3fc);pointer-events:none}
 .settings .app-version{border-top:1px solid var(--line);margin:16px 0 0;padding-top:12px;font-size:12px;user-select:text}
 .project-tools{display:grid;grid-template-columns:minmax(max-content,1fr) auto minmax(max-content,1fr);gap:12px}.project-tools .mode-switch{justify-self:end}.navigation-tools{display:flex;align-items:center;gap:3px}.navigation-tools .divider{margin:0 4px}

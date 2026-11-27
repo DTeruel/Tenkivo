@@ -155,12 +155,18 @@ fn checked(response: Response) -> Result<Response, String> {
     if response.status().is_success() {
         Ok(response)
     } else {
-        Err(failure(response.status()))
+        let status = response.status();
+        Err(format!(
+            "{} (GitHub HTTP {})",
+            failure(status),
+            status.as_u16()
+        ))
     }
 }
 
-fn connection_error(_: reqwest::Error) -> String {
-    "Could not complete the request to GitHub. Check your connection and try again.".into()
+fn connection_error(error: reqwest::Error) -> String {
+    let error = error.without_url();
+    format!("Could not complete the request to GitHub. {error}")
 }
 
 #[tauri::command]

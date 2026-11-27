@@ -230,12 +230,25 @@ pub(super) fn cache_saved(cache_root: &Path, repo: &str, assets: &Assets) {
     if assets.is_empty() {
         return;
     }
-    if let Ok(folder) = cache_dir(cache_root, repo) {
-        for (name, bytes) in &assets.images {
-            if !folder.join(name).is_file() {
-                let _ = cache_file(&folder, name, bytes);
-            }
+    let Some(folder) = image_cache_folder(cache_root, repo) else {
+        return;
+    };
+    for (name, bytes) in &assets.images {
+        if !folder.join(name).is_file() {
+            cache_image(&folder, name, bytes);
         }
+    }
+}
+
+fn image_cache_folder(cache_root: &Path, repo: &str) -> Option<PathBuf> {
+    cache_dir(cache_root, repo)
+        .map_err(|error| crate::diagnostics::error("Open project cache", error))
+        .ok()
+}
+
+fn cache_image(folder: &Path, name: &str, bytes: &[u8]) {
+    if let Err(error) = cache_file(folder, name, bytes) {
+        crate::diagnostics::error("Write project image cache", error);
     }
 }
 
@@ -273,7 +286,7 @@ pub(super) async fn hydrate(
     let folder = if names.is_empty() {
         None
     } else {
-        cache_dir(cache_root, repo).ok()
+        image_cache_folder(cache_root, repo)
     };
     let mut sources = BTreeMap::new();
     for (name, sha) in names {
@@ -304,7 +317,7 @@ pub(super) async fn hydrate(
                 return Err("A downloaded project image did not pass verification.".into());
             }
             if let Some(folder) = &folder {
-                let _ = cache_file(folder, &name, &bytes);
+                cache_image(folder, &name, &bytes);
             }
             bytes
         };
@@ -655,16 +668,19 @@ pub(super) async fn save_with_assets(
         .path_segments_mut()
         .map_err(|_| "Invalid branch URL.")?
         .extend(branch.split('/'));
-    git_write(client.patch(reference).bearer_auth(token),
-        json!({"sha":commit,"force":false})).await
-        .map_err(|error| {
-            if error.starts_with("GitHub rejected the save (HTTP 409)")
-                || error.to_ascii_lowercase().contains("not a fast forward")
-            {
-                format!("Online save conflict: {error}")
-            } else {
-                error
-            }
-        })?;
+    git_write(
+        client.patch(reference).bearer_auth(token),
+        json!({"sha":commit,"force":false}),
+    )
+    .await
+    .map_err(|error| {
+        if error.starts_with("GitHub rejected the save (HTTP 409)")
+            || error.to_ascii_lowercase().contains("not a fast forward")
+        {
+            format!("Online save conflict: {error}")
+        } else {
+            error
+        }
+    })?;
     Ok(Some(project_sha.to_owned()))
 }

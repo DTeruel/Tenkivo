@@ -2,6 +2,7 @@
 use std::{fs, io::Write, path::Path};
 mod app_data;
 mod attachments;
+mod diagnostics;
 mod export;
 mod updates;
 mod online;
@@ -62,7 +63,10 @@ fn project_availability(path: String) -> Result<&'static str, String> {
         Ok(meta) if meta.is_file() => "Available",
         Ok(_) => "Missing",
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => "Missing",
-        Err(_) => "Unavailable",
+        Err(error) => {
+            diagnostics::error("Check project availability", error);
+            "Unavailable"
+        },
     })
 }
 
@@ -113,6 +117,9 @@ fn main() {
         if register_only || !cfg!(debug_assertions) {
             let result = register_project_files();
             if register_only { std::process::exit(if result.is_ok() { 0 } else { 1 }); }
+            if let Err(error) = result {
+                diagnostics::error("Register project file association", error);
+            }
         }
     }
     tauri::Builder::default()
@@ -141,7 +148,7 @@ fn main() {
                         .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
                         .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
                     if let Err(error) = settings {
-                        eprintln!("Could not disable browser shortcuts: {error}");
+                        diagnostics::error("Disable browser shortcuts", error);
                     }
                     let handler = AcceleratorKeyPressedEventHandler::create(Box::new(|_, args| {
                         if let Some(args) = args {
@@ -156,7 +163,7 @@ fn main() {
                     }));
                     let mut token = 0;
                     if let Err(error) = view.controller().add_AcceleratorKeyPressed(&handler, &mut token) {
-                        eprintln!("Could not register the downloads shortcut handler: {error}");
+                        diagnostics::error("Register downloads shortcut handler", error);
                     }
                 })?;
             }
@@ -166,6 +173,7 @@ fn main() {
         })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            diagnostics::take_native_diagnostics,
             online::github_client_id,
             online::online_sign_in,
             online::online_poll,

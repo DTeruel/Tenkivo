@@ -5,7 +5,7 @@
   import {tick} from 'svelte';
   import {invoke} from './diagnostics.svelte';
   import {isTauri} from '@tauri-apps/api/core';
-  import {save} from '@tauri-apps/plugin-dialog';
+  import {save} from './diagnostics.svelte';
   import {defaultCatalog,textParts,webAddress,type Page,type Project,type Destination} from './model';
   import {layout,width,height,type Sheet} from './print-layout';
   let {project,path,filters,pageTags,convert,ensureSaved,notify}:{
