@@ -196,6 +196,7 @@
   let history=$state<{page:string;x:number;y:number;zoom:number;ids:string[]}[]>([]), cursor=$state(-1);
   let historyLimit=$state(normalizeLimit(Number(localStorage.getItem('navigation-limit')??10)));
   let historyMenu=$state<HTMLDetailsElement>(null!), fileMenu=$state<HTMLDetailsElement>(null!);
+  let githubMenu=$state<HTMLDetailsElement>();
   let pageParent:string|undefined;
   function normalizeLimit(n:number){return Number.isFinite(n)?Math.max(1,Math.min(100,Math.round(n))):10;}
   function trimHistory(){
@@ -1528,7 +1529,12 @@
         e.preventDefault();if(!e.repeat)acceptDrawing(true);return;
       }
     }
-    if(e.key==='Escape' && (menu || fileMenu.open)){menu=undefined;fileMenu.open=false;return;}
+    if(e.key==='Escape' && (menu || fileMenu?.open || githubMenu?.open)){
+      menu=undefined;
+      if(fileMenu)fileMenu.open=false;
+      if(githubMenu)githubMenu.open=false;
+      return;
+    }
     if(e.key==='Escape' && historyMenu?.open){historyMenu.open=false;historyMenu.querySelector('summary')?.focus();return;}
     if(document.querySelector('dialog[open]'))return;
     if((e.target as HTMLElement).closest?.('.note-title')){
@@ -1728,7 +1734,7 @@
     </fieldset>
   </details>
 {/snippet}
-<svelte:window oncopy={e=>copyObjects(false,e)} oncut={e=>copyObjects(true,e)} onpaste={paste} onpointermove={e=>pagePointerMove(e)} onpointerup={e=>pagePointerMove(e,true)} onpointercancel={()=>{pagePointer=undefined;draggingPage='';treeDrop='';}} onkeydown={keys} onkeyup={e=>{if(e.key==='Alt')altHeld=false;}} onblur={()=>{altHeld=false;wire=undefined;}} oncontextmenu={e=>e.preventDefault()} onpointerdown={e=>{if(!(e.target as HTMLElement).closest('.app-menu'))menu=undefined;if(historyMenu && !historyMenu.contains(e.target as Node))historyMenu.open=false;if(fileMenu && !fileMenu.contains(e.target as Node))fileMenu.open=false;}}/>
+<svelte:window oncopy={e=>copyObjects(false,e)} oncut={e=>copyObjects(true,e)} onpaste={paste} onpointermove={e=>pagePointerMove(e)} onpointerup={e=>pagePointerMove(e,true)} onpointercancel={()=>{pagePointer=undefined;draggingPage='';treeDrop='';}} onkeydown={keys} onkeyup={e=>{if(e.key==='Alt')altHeld=false;}} onblur={()=>{altHeld=false;wire=undefined;}} oncontextmenu={e=>e.preventDefault()} onpointerdown={e=>{if(!(e.target as HTMLElement).closest('.app-menu'))menu=undefined;if(historyMenu && !historyMenu.contains(e.target as Node))historyMenu.open=false;if(fileMenu && !fileMenu.contains(e.target as Node))fileMenu.open=false;if(githubMenu && !githubMenu.contains(e.target as Node))githubMenu.open=false;}}/>
 <div class="studio" data-theme={theme} class:launcher={welcome}>
   {#if welcome}
     <main class="welcome">
@@ -1771,7 +1777,7 @@
     </main>
   {:else}
   <header>
-    <nav><details class="file-menu" bind:this={fileMenu}>
+    <nav><details class="file-menu" bind:this={fileMenu} ontoggle={()=>{if(fileMenu.open && githubMenu)githubMenu.open=false;}}>
       <summary>File</summary><div class="file-list">
         <button disabled={busy} onclick={()=>{fileMenu.open=false;newProject();}}>New Local Project…</button>
         {#if isTauri()}<button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('create');}}>New Online Project…</button>{/if}
@@ -1782,21 +1788,28 @@
         <button disabled={!canSaveProject} onclick={()=>{fileMenu.open=false;void saveFile();}}>Save</button>
         {#if onlineProject}
           <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveAsLocal();}}>Save as Local…</button>
-          <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;refreshOnlineProject();}}>Refresh from GitHub</button>
-          <button onclick={()=>{
-            fileMenu.open=false;
-            const repo=onlineProject?.repo;
-            if(repo)void invoke('open_web',{url:'https://github.com/'+repo.split('/').map(encodeURIComponent).join('/')})
-              .catch(error=>{status='Could not open the GitHub repository. '+String(error);});
-          }}>View on GitHub</button>
         {:else if isTauri()}
           <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('save');}}>Save as Online…</button>
         {/if}
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export…</button>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
-      </div></details><button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
-      {#if onlineProject}<button disabled={busy || restoringAccount} onclick={refreshOnlineProject}>Refresh from GitHub</button>{/if}
+      </div></details>
+      {#if onlineProject}
+        <details class="file-menu" bind:this={githubMenu} ontoggle={()=>{if(githubMenu?.open)fileMenu.open=false;}}>
+          <summary>GitHub</summary>
+          <div class="file-list">
+            <button disabled={busy || restoringAccount} onclick={()=>{if(githubMenu)githubMenu.open=false;refreshOnlineProject();}}>Refresh Project</button>
+            <button onclick={()=>{
+              if(githubMenu)githubMenu.open=false;
+              const repo=onlineProject?.repo;
+              if(repo)void invoke('open_web',{url:'https://github.com/'+repo.split('/').map(encodeURIComponent).join('/')})
+                .catch(error=>{status='Could not open the GitHub repository. '+String(error);});
+            }}>Open Repository</button>
+          </div>
+        </details>
+      {/if}
+      <button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
     </nav>
     <div class="app-actions">
       {@render gitHubAccountButton()}
