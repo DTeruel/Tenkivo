@@ -13,12 +13,9 @@
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
   import {invoke,diagnostics,recordActivity,recordError,collectNativeDiagnostics} from './diagnostics.svelte';
   import GitHubProjectUsers from './GitHubProjectUsers.svelte';
-  let showingLogHistory=$state(false);
-  function showLogs(history=false){
-    showingLogHistory=history;
-
+  function showLogs(){
     if(!dialog.open)ask('Editor logs');
-    if(!history && dialogType==='Editor logs')diagnostics.unreadErrors=0;
+    if(dialogType==='Editor logs')diagnostics.unreadErrors=0;
   }
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from './diagnostics.svelte';
@@ -2065,11 +2062,7 @@
   {:else if dialogType==='Add web link'}
     <form onsubmit={e=>{e.preventDefault();if(insertUrl(linkUrl,insertAt?.x,insertAt?.y))dialog.close();}}><label>URL<input type="url" required bind:value={linkUrl}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!webAddress(linkUrl)}>Add link</button></form>
   {:else if dialogType==='Editor logs'}
-    <div class="row" role="group" aria-label="Log sessions">
-      <button aria-pressed={!showingLogHistory} class:chosen={!showingLogHistory} onclick={()=>showLogs()}>Current session</button>
-      <button aria-pressed={showingLogHistory} class:chosen={showingLogHistory} onclick={()=>showLogs(true)}>Previous Log</button>
-    </div>
-    <div class="log-list">{#each [...(showingLogHistory?diagnostics.history:diagnostics.entries)].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>{showingLogHistory?'No log from the previous session.':'No activity recorded in this session.'}</p>{/each}</div>
+    <div class="log-list">{#each [...diagnostics.entries].reverse() as entry}<article><time>{new Date(entry.time).toLocaleString()}</time><strong>{entry.level.toUpperCase()} · {entry.context}</strong><pre>{entry.message}</pre></article>{:else}<p>No activity recorded in this session.</p>{/each}</div>
   {:else if dialogType==='Empty trash'}<p>Remove {project.trash?.length} {project.trash?.length===1?'page':'pages'} from this project’s trash?</p>
     <button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
