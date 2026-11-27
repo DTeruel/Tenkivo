@@ -19,7 +19,7 @@
   }
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from './diagnostics.svelte';
-  import { defaultCatalog, tagPresets, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
+  import { defaultCatalog, tagPresets, availablePresetTags, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
   const noteStyles:NoteStyle[]=['bold','italic','underline'];
@@ -695,9 +695,12 @@
   const names=$derived(Object.fromEntries(catalog.map(d=>[d.id,d.name])));
   let draftName=$state(''),draftDescription=$state(''),draftCatalog=$state<typeof defaultCatalog>([]);
   let selectedTagPreset=$state<keyof typeof tagPresets|''>('');
+  let excludedPresetTags=$state<string[]>([]);
+  const presetPreview=$derived(selectedTagPreset?availablePresetTags(draftCatalog,selectedTagPreset):[]);
+  const selectedPresetTags=$derived(presetPreview.filter(name=>!excludedPresetTags.includes(name)));
   function applyTagPreset(){
-    if(!selectedTagPreset)return;
-    draftCatalog=addTagPreset(draftCatalog,selectedTagPreset);
+    if(!selectedTagPreset || !selectedPresetTags.length)return;
+    draftCatalog=addTagPreset(draftCatalog,selectedTagPreset,selectedPresetTags);
     selectedTagPreset='';
   }
   function invalidDraftTags(){return draftCatalog.some(tag=>!tag.name.trim());}
@@ -1531,13 +1534,6 @@
 </script>
 
 {#snippet tagEditor()}
-  <label>Tag preset
-    <select bind:value={selectedTagPreset}>
-      <option value="">Choose a preset</option>
-      {#each Object.keys(tagPresets) as preset}<option value={preset}>{preset}</option>{/each}
-    </select>
-  </label>
-  <button class="add-project-entry" type="button" disabled={!selectedTagPreset} onclick={applyTagPreset}>Add Preset Tags</button>
   {#each draftCatalog as tag (tag.id)}
     <div class="department-editor">
       <input type="color" aria-label={'Color for '+tag.name} bind:value={tag.color}/>
@@ -1546,6 +1542,30 @@
     </div>
   {/each}
   <button class="add-project-entry" type="button" onclick={()=>draftCatalog.push({id:crypto.randomUUID(),name:'New tag',color:'#8888bb'})}>Add New Tag</button>
+  <label class="tag-preset-picker">Tag preset
+    <select bind:value={selectedTagPreset} onchange={()=>excludedPresetTags=[]}>
+      <option value="">Choose a preset</option>
+      {#each Object.keys(tagPresets) as preset}<option value={preset}>{preset}</option>{/each}
+    </select>
+  </label>
+  {#if selectedTagPreset}
+    {#if presetPreview.length}
+      <fieldset class="tag-preset-preview">
+        <legend>Tags to add</legend>
+        {#each presetPreview as name (name)}
+          <label>
+            <input type="checkbox" checked={!excludedPresetTags.includes(name)}
+              onchange={event=>excludedPresetTags=event.currentTarget.checked
+                ? excludedPresetTags.filter(tag=>tag!==name):[...excludedPresetTags,name]}/>
+            {name}
+          </label>
+        {/each}
+      </fieldset>
+    {:else}
+      <p>All tags from this preset are already in the project.</p>
+    {/if}
+    <button class="add-project-entry" type="button" disabled={!selectedPresetTags.length} onclick={applyTagPreset}>Add Preset Tags</button>
+  {/if}
 {/snippet}
 
 {#snippet updatesButton()}

@@ -126,6 +126,11 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .manual-online-open form {margin-top:12px}
 
 .add-project-entry {display:block;width:100%}
+.tag-preset-picker{margin-top:16px}
+.tag-preset-preview{margin-bottom:12px}
+.tag-preset-preview legend{color:var(--muted);font-size:12px;margin-bottom:6px}
+.tag-preset-preview label{display:flex;align-items:center;gap:8px;margin:0;padding:4px 0;color:var(--ink)}
+.tag-preset-preview input{width:auto;margin:0}
 .department-editor select {width:4em;flex:none}
 .user-picker>div {display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .project-form > .add-project-entry + .add-project-entry {margin-bottom:16px}

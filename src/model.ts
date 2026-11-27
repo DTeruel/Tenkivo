@@ -12,11 +12,15 @@ export const tagPresets = {
   'Milestones': ['Prototype','MVP','Beta','Launch','Post-launch'],
 } as const;
 
-export function addTagPreset(catalog:DepartmentInfo[],preset:keyof typeof tagPresets):DepartmentInfo[]{
-  const palette=['#bd9b56','#799ccf','#71aa8d','#b48fbd','#cf827a','#77aab5'];
+export function availablePresetTags(catalog:DepartmentInfo[],preset:keyof typeof tagPresets){
   const names=new Set(catalog.map(tag=>tag.name.trim().toLowerCase()));
+  return tagPresets[preset].filter(name=>!names.has(name.toLowerCase()));
+}
+
+export function addTagPreset(catalog:DepartmentInfo[],preset:keyof typeof tagPresets,selected:readonly string[]):DepartmentInfo[]{
+  const palette=['#bd9b56','#799ccf','#71aa8d','#b48fbd','#cf827a','#77aab5'];
   const ids=new Set(catalog.map(tag=>tag.id));
-  const newTags=tagPresets[preset].filter(name=>!names.has(name.toLowerCase())).map((name,index)=>{
+  const newTags=availablePresetTags(catalog,preset).filter(name=>selected.includes(name)).map((name,index)=>{
     const standard=defaultCatalog.find(tag=>tag.name===name && !ids.has(tag.id));
     return standard?{...standard}:{id:crypto.randomUUID(),name,color:palette[(catalog.length+index)%palette.length]};
   });
