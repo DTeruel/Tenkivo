@@ -234,6 +234,7 @@
   let discoveredProjects=$state<DiscoveredProject[]>([]),discovering=$state(false),discoveryError=$state('');
   let discoveryAttempt=0;
   let onlineRepo=$state(localStorage.getItem('studio-online-repo')??'');
+  let onlineNewName=$state('');
   let clientId=$state(localStorage.getItem('studio-github-client-id')??'');
   let configuredClientId=$state('');
   let onlineError=$state(''),deviceCode=$state(''),onlineWorking=$state(false);
@@ -304,20 +305,29 @@
   function checkOnlineAttachments(doc:Project){
     const pages=[...doc.pages,...doc.trash??[],...(doc.pageHistory??[]).map(version=>version.page)];
     if(pages.some(page=>page.items.some(item=>item.attachment)))
-      throw Error('Online projects do not support local file attachments, including those in page history.');
+      throw Error('This project contains local file attachments or has them in its page history. Tenkivo cannot publish this copy. To start a shared project, use Create online project from the welcome screen.');
   }
   function sharedDocument(){
     const pageHistory=checkpointPages();
     checkOnlineAttachments({...project,pageHistory});
     return {pageHistory,raw:JSON.stringify({...project,pageHistory})};
   }
-  async function accessOnline(action:'open'|'publish'|'reload',selectedRepo?:string){
+  async function accessOnline(action:'open'|'publish'|'reload'|'create',selectedRepo?:string){
     if(onlineWorking || busy || !account)return;
     const repo=action==='reload' ? onlineProject?.repo : selectedRepo??onlineRepo.trim();
     if(!repo || (action==='publish' && (welcome || onlineProject)))return;
+    const newName=onlineNewName.trim();
+    if(action==='create' && (!welcome || !newName))return;
     onlineWorking=true;busy=true;onlineError='';
     try{
-      if(action==='publish'){
+      if(action==='create'){
+        const document=JSON.stringify({version:1,name:newName,pages:[page('Overview')] } satisfies Project);
+        const saved=await invoke<{sha:string;branch:string}>('online_save',{repo,branch:null,sha:null,document});
+        await load(document,'',{repo,...saved,writable:true});
+        onlineNewName='';
+        status='Online project created · '+repo;
+        void discoverProjects();
+      }else if(action==='publish'){
         commit();
         await invoke('online_save',{repo,branch:null,sha:null,document:sharedDocument().raw});
         status='Online copy published · '+repo;
@@ -332,6 +342,7 @@
       if(dialogType==='Online project')dialog.close();
     }catch(error){
       onlineError=String(error);
+      recordError('Online project · '+action,error);
       if(!dialog.open){if(welcome)welcomeError=onlineError;else status=onlineError;}
     }
     finally{onlineWorking=false;busy=false;}
@@ -1598,7 +1609,12 @@
       {@render discoverableProjects()}
       <label>Private repository<input placeholder="owner/repository" bind:value={onlineRepo} disabled={onlineWorking}/></label>
       <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>
-      {#if !welcome && !onlineProject}
+      {#if welcome}
+        <form onsubmit={e=>{e.preventDefault();void accessOnline('create');}}>
+          <label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>
+          <button disabled={busy || !onlineRepo.trim() || !onlineNewName.trim()}>Create online project</button>
+        </form>
+      {:else if !onlineProject}
         <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('publish')}>Publish a copy</button>
       {:else if onlineProject}
         <button disabled={busy} onclick={()=>accessOnline('reload')}>Reload from GitHub</button>

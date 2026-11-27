@@ -303,17 +303,16 @@ struct Permissions {
 }
 
 async fn repository(client: &Client, token: &str, url: &str) -> Result<Repository, String> {
-    let details: Repository = checked(
-        client
-            .get(url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(connection_error)?,
-    )?
-    .json()
-    .await
-    .map_err(connection_error)?;
+    let response = client
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(connection_error)?;
+    if response.status() == StatusCode::NOT_FOUND {
+        return Err("GitHub did not grant Tenkivo access to this repository. Check owner/name and install the Tenkivo GitHub App on this specific repository under its owner account or organization.".into());
+    }
+    let details: Repository = checked(response)?.json().await.map_err(connection_error)?;
     if !details.private {
         return Err("Choose a private GitHub repository for your shared project.".into());
     }
@@ -348,7 +347,7 @@ pub async fn online_open(
         .map_err(connection_error)?;
     if response.status() == StatusCode::NOT_FOUND {
         return Err(
-            "There is no project.tkv on this branch, or your account cannot read it.".into(),
+            "There is no readable project.tkv on this branch. Create an online project or publish a copy first. If the file already exists, check the GitHub App's Contents permission.".into(),
         );
     }
     let content: Value = checked(response)?.json().await.map_err(connection_error)?;
@@ -394,17 +393,24 @@ pub async fn online_save(
     document: String,
 ) -> Result<SavedProject, String> {
     if document.len() > MAX_DOCUMENT {
-        return Err("Online projects are limited to 1 MiB.".into());
+        return Err(format!(
+            "This project is {} KiB. Online projects are limited to 1024 KiB.",
+            document.len().div_ceil(1024)
+        ));
     }
     let token = token(&state)?;
     let client = client()?;
     let url = repository_url(&repo)?;
     let details = repository(&client, &token, &url).await?;
-    if !details.permissions.is_some_and(|p| p.push) {
+    if details.permissions.is_some_and(|p| !p.push) {
         return Err("Your GitHub account has read-only access to this repository.".into());
     }
+    let use_default_branch = branch.is_none();
     let branch = branch.unwrap_or(details.default_branch);
-    let mut body = json!({"message":"Save Tenkivo project","content":STANDARD.encode(document),"branch":branch});
+    let mut body = json!({"message":"Save Tenkivo project","content":STANDARD.encode(document)});
+    if !use_default_branch {
+        body["branch"] = json!(branch);
+    }
     if let Some(ref sha) = sha {
         body["sha"] = json!(sha);
     }
@@ -415,16 +421,30 @@ pub async fn online_save(
         .send()
         .await
         .map_err(connection_error)?;
-    match response.status() {
-        StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY if sha.is_some() => {
-            return Err("GitHub rejected this revision. Export a local copy to preserve your changes, then reload the online project before continuing.".into());
-        }
-        StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY => {
-            return Err("GitHub rejected the upload. Check that the repository is initialized, the branch allows writes, and project.tkv does not already exist.".into());
-        }
-        _ => {}
+    let status = response.status();
+    if !status.is_success() {
+        let data = response.json::<Value>().await.unwrap_or_default();
+        let details: String = data["message"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(300)
+            .collect();
+        let hint = match status {
+            StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY if sha.is_some() =>
+                "Save a local copy before reloading the online project. Also check whether the branch allows direct writes.",
+            StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY =>
+                "If project.tkv exists, open it instead. For an empty repository, add a README to initialize the default branch and retry.",
+            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND =>
+                "Check that the Tenkivo GitHub App is installed on this repository with Contents set to Read and write, and that your account can write to its branch.",
+            _ => "Check the GitHub repository settings and try again.",
+        };
+        return Err(format!(
+            "GitHub could not save {DOC} (HTTP {}). {details} {hint}",
+            status.as_u16()
+        ));
     }
-    let result: Value = checked(response)?.json().await.map_err(connection_error)?;
+    let result: Value = response.json().await.map_err(connection_error)?;
     Ok(SavedProject {
         sha: result["content"]["sha"]
             .as_str()
