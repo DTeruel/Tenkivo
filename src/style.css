@@ -88,7 +88,7 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .page-editors {display:flex;align-items:center;gap:3px;margin-inline:4px;flex:none}
 .page-editor-avatar {position:relative;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;overflow:hidden;background:var(--paper);color:var(--ink);font-size:10px}
 .page-editor-avatar img {position:absolute;inset:0;border-radius:inherit}
-.canvas-add {position:absolute;z-index:6;left:10px;top:10px;width:32px;height:32px;padding:0;font-size:23px;background:var(--paper);border:1px solid var(--line);box-shadow:0 2px 6px #0002}
+.canvas-add {position:absolute;z-index:6;left:10px;top:10px;width:32px;height:32px;display:grid;place-items:center;padding:0;background:var(--paper);border:1px solid var(--line);box-shadow:0 2px 6px #0002}
 .menu-heading {font-size:11px;color:var(--muted);padding:4px 9px}
 .app-menu .menu-export {border-top:1px solid var(--line);border-radius:0}
 .log-list {max-height:65vh;width:min(580px,72vw);overflow:auto}

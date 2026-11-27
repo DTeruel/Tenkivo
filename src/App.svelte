@@ -1834,7 +1834,9 @@
   </div><h1>{board.name}</h1></div></div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="viewport" class:drawing-mode={drawingMode} bind:this={viewport} bind:clientWidth={width} bind:clientHeight={height} oncontextmenu={e=>canvasMenu(e)} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>{wire=undefined;stroke=undefined;drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;commit();}} ondragover={e=>e.preventDefault()} ondrop={drop}>
-      <button class="canvas-add" aria-label="Add canvas element" title="Add canvas element" disabled={!editing} onpointerdown={e=>e.stopPropagation()} onclick={e=>canvasMenu(e,true)}>+</button>
+      <button class="canvas-add" aria-label="Add canvas element" title="Add canvas element" disabled={!editing} onpointerdown={e=>e.stopPropagation()} onclick={e=>canvasMenu(e,true)}>
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10M8 3v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
       {#if drawingMode}
         <div class="drawing-input"></div>
         <div class="drawing-toolbar" role="group" aria-label="Drawing tools">
