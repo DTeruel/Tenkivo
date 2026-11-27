@@ -14,7 +14,7 @@ mod session_store;
 
 const API: &str = "https://api.github.com";
 const DOC: &str = "project.tkv";
-const MAX_DOCUMENT: usize = 1024 * 1024;
+pub(super) const MAX_DOCUMENT: usize = 1024 * 1024;
 const TENKIVO_GITHUB_CLIENT_ID: &str = "Iv23liFFdqx1jchyfonO";
 
 #[tauri::command]

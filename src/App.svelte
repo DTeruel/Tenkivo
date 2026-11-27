@@ -416,8 +416,14 @@
   let dropAt={x:0,y:0};
   function offerFiles(paths:string[],x:number,y:number){
     if(!editing){status=readHint;return;}
-    if(onlineProject){status='Local file attachments require a local project.';return;}
     if(!paths.length || document.querySelector('dialog[open]'))return;
+    if(onlineProject){
+      void importEmbeddedImages(paths.map(path=>({
+        name:path.split(/[\\/]/).at(-1)??'Image',
+        read:()=>invoke<string>('read_embedded_image',{path})
+      })),x,y);
+      return;
+    }
     incoming=paths;dropAt={x,y};importError='';fileDialog.showModal();
   }
   async function attach(local:boolean){
@@ -448,7 +454,7 @@
     if(kind==='Note' || kind==='Frame'){add(kind,insertAt);return;}
     if(kind==='Page link'){linkPage=project.pages.find(p=>p.id!==current)?.id??current;ask('Add page link');return;}
     if(kind==='Web link'){linkUrl='';ask('Add web link');return;}
-    if(!isTauri() || onlineProject){imageInput.click();return;}
+    if(!isTauri()){imageInput.click();return;}
     try{
       const value=await open({multiple:true,directory:kind==='Folder',filters:kind==='Image'?[{name:'Images',extensions:['png','jpg','jpeg','gif','webp']}]:undefined});
       if(value)offerFiles(value,insertAt?.x??(width/2-tx)/zoom,insertAt?.y??(height/2-ty)/zoom);
@@ -1096,19 +1102,34 @@
     if(kind==='Frame'){o.w=480;o.h=300;board.items.unshift(o);}else board.items.push(o);
     ids=[o.id];focusArea='canvas';change();return o;
   }
-  async function importImages(files:File[], x?:number,y?:number) {
+  async function importEmbeddedImages(files:{name:string;read:()=>Promise<string>}[], x=(width/2-tx)/zoom,y=(height/2-ty)/zoom) {
     if(!editing || !files.length)return;
-    const sourcePage=current;
+    const owner=project,sourcePage=current;
+    let failure='';
     for(const [i,f] of files.entries()) {
-      if(!['image/png','image/jpeg','image/gif','image/webp'].includes(f.type)){status='Choose a PNG, JPEG, GIF or WebP image.';continue;}
       try {
-        const source=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=reject;r.readAsDataURL(f);});
+        const source=await f.read();
         const img=new Image();img.src=source;await img.decode();
-        if(current!==sourcePage || !editing)return;
+        if(project!==owner || current!==sourcePage || !editing)return;
         const w=Math.min(360,img.naturalWidth), h=w*img.naturalHeight/img.naturalWidth+32;
-        add('Image',{name:f.name,source,w,h,department:'Art',x:(x??(width/2-tx)/zoom)+i*18,y:(y??(height/2-ty)/zoom)+i*18});
-      } catch(err){recordError('Image import',err);status='This image could not be loaded.';}
+        add('Image',{name:f.name,source,w,h,department:'Art',x:x+i*18,y:y+i*18});
+      }catch(error){recordError('Image import',error);failure='Could not import '+f.name+'. '+String(error);}
     }
+    if(failure && project===owner && current===sourcePage)status=failure;
+  }
+  function importImages(files:File[],x?:number,y?:number) {
+    return importEmbeddedImages(files.map(file=>({
+      name:file.name,
+      read:()=>new Promise<string>((resolve,reject)=>{
+        if(!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type)){
+          reject('Choose a PNG, JPEG, GIF or WebP image.');return;
+        }
+        const reader=new FileReader();
+        reader.onload=()=>resolve(String(reader.result));
+        reader.onerror=()=>reject('The image could not be read.');
+        reader.readAsDataURL(file);
+      })
+    })),x,y);
   }
   function drop(e:DragEvent){
     e.preventDefault();if(!editing){status=readHint;return;}if(!e.dataTransfer)return;

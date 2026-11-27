@@ -249,6 +249,26 @@ pub async fn attachment_image(project: String, attachment: Attachment) -> Result
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub async fn read_embedded_image(path: String) -> Result<String, String> {
+    use std::io::Read;
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = Path::new(&path);
+        if !path.is_absolute() || !path.is_file() {
+            return Err("Choose a local image file.".into());
+        }
+        let kind = mime(path).ok_or("Choose a PNG, JPEG, GIF or WebP image.")?;
+        let max = crate::online::MAX_DOCUMENT / 4 * 3;
+        let mut bytes = Vec::new();
+        fs::File::open(path).map_err(|e| e.to_string())?.take((max + 1) as u64)
+            .read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        if bytes.len() > max {
+            return Err("This image is too large for an online project.".into());
+        }
+        Ok(format!("data:{kind};base64,{}", STANDARD.encode(bytes)))
+    }).await.map_err(|error| error.to_string())?
+}
 fn media_file(project: &str, attachment: &Attachment) -> Result<PathBuf, String> {
     let path = fs::canonicalize(resolve(project, attachment)?).map_err(|e| e.to_string())?;
     let extension = path

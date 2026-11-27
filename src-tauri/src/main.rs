@@ -178,6 +178,7 @@ fn main() {
             export::open_pdf_location,
             attachments::import_attachments,
             attachments::attachment_image,
+            attachments::read_embedded_image,
             attachments::attachment_media,
             attachments::open_attachment,
             attachments::reveal_attachment,
