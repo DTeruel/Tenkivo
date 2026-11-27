@@ -201,6 +201,7 @@ fn main() {
             online::online_open,
             online::online_save,
             online::access::online_discover,
+            online::access::online_stop_discovery,
             online::access::online_project_access,
             online::access::online_find_user,
             online::access::online_invite_editor,

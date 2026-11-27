@@ -1,2 +1,25 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tenkivo</title></head><body style="margin:0"><div id="app"></div><script type="module" src="/src/main.ts"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tenkivo</title>
+    <style>
+      body { margin: 0; }
+      #startup-screen {
+        position: fixed; inset: 0; display: grid; place-content: center; gap: 8px;
+        text-align: center; font: 14px system-ui, sans-serif;
+        background: #161616; color: #ddd;
+      }
+      #startup-screen strong { font-size: 24px; }
+      @media (prefers-color-scheme: light) {
+        #startup-screen { background: #f6f6f6; color: #252525; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="startup-screen" role="status"><strong>Tenkivo</strong><span>Starting Tenkivo…</span></div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

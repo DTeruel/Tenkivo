@@ -6,6 +6,7 @@ use reqwest::{Client, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use tauri::State;
 
 async fn pages<T: DeserializeOwned>(
@@ -63,8 +64,19 @@ pub struct DiscoveredProject {
 }
 
 #[tauri::command]
-pub async fn online_discover(state: State<'_, Online>) -> Result<Vec<DiscoveredProject>, String> {
+pub async fn online_discover(
+    state: State<'_, Online>,
+    request_id: u64,
+) -> Result<Vec<DiscoveredProject>, String> {
+    state.2.fetch_max(request_id, Ordering::Relaxed);
+    let cancelled = || state.2.load(Ordering::Relaxed) != request_id;
+    if cancelled() {
+        return Ok(Vec::new());
+    }
     let token = token(&state).await?;
+    if cancelled() {
+        return Ok(Vec::new());
+    }
     let client = client()?;
     let installations: Vec<Installation> = pages(
         &client,
@@ -76,6 +88,9 @@ pub async fn online_discover(state: State<'_, Online>) -> Result<Vec<DiscoveredP
     .await?;
     let mut candidates = BTreeMap::new();
     for installation in installations {
+        if cancelled() {
+            return Ok(Vec::new());
+        }
         let url = format!("{API}/user/installations/{}/repositories", installation.id);
         let repositories: Vec<Repository> =
             pages(&client, &token, &url, Some("repositories"), &[]).await?;
@@ -86,6 +101,9 @@ pub async fn online_discover(state: State<'_, Online>) -> Result<Vec<DiscoveredP
 
     let mut projects = Vec::new();
     for repo in candidates.into_values() {
+        if cancelled() {
+            return Ok(Vec::new());
+        }
         let url = repository_url(&repo.full_name)?;
         let response = client
             .get(format!("{url}/contents"))
@@ -109,6 +127,11 @@ pub async fn online_discover(state: State<'_, Online>) -> Result<Vec<DiscoveredP
         }
     }
     Ok(projects)
+}
+
+#[tauri::command]
+pub fn online_stop_discovery(state: State<'_, Online>, request_id: u64) {
+    state.2.fetch_max(request_id, Ordering::Relaxed);
 }
 
 async fn admin_context(

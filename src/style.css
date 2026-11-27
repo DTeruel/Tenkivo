@@ -100,6 +100,8 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .welcome-project-panel {min-width:0;padding:20px;border:1px solid var(--line);border-radius:10px}
 .welcome-project-panel h3 {margin:12px 0 8px;font-size:13px}
 .welcome-actions {flex-wrap:wrap;margin:0 0 18px;gap:6px}
+.github-startup-status {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;color:var(--muted);font-size:12px}
+.github-startup-status button,.github-reconnect {border:1px solid var(--line);background:var(--paper)}
 .welcome-actions button,.recent-project {border:1px solid var(--line);background:var(--paper);border-radius:6px}
 .welcome h2 {margin:0 0 12px}
 .recent-project {margin-bottom:6px;padding:7px 10px}

@@ -232,8 +232,9 @@
   type DiscoveredProject=Pick<OnlineProject,'repo'|'writable'>;
   let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
   let restoringAccount=$state(isTauri()),restoreAccountError=$state('');
+  let restoreSkipped=$state(false), restoreAttempt=0;
   let onlineMode=$state<'manage'|'open'|'create'>('manage');
-  let discoveredProjects=$state<DiscoveredProject[]>([]),discovering=$state(false),discoveryError=$state('');
+  let discoveredProjects=$state<DiscoveredProject[]>([]),discovering=$state(false),discoveryError=$state(''),discoveryPaused=$state(false);
   let discoveryAttempt=0;
   let onlineRepo=$state(localStorage.getItem('studio-online-repo')??'');
   let onlineNewName=$state('');
@@ -246,12 +247,18 @@
   async function discoverProjects(){
     if(!account)return;
     const attempt=++discoveryAttempt;
-    discovering=true;discoveryError='';
+    discovering=true;discoveryError='';discoveryPaused=false;
     try{
-      const found=await invoke<DiscoveredProject[]>('online_discover');
+      const found=await invoke<DiscoveredProject[]>('online_discover',{requestId:attempt});
       if(attempt===discoveryAttempt)discoveredProjects=found;
     }catch(error){if(attempt===discoveryAttempt)discoveryError=String(error);}
     finally{if(attempt===discoveryAttempt)discovering=false;}
+  }
+
+  function stopDiscovery(){
+    const requestId=++discoveryAttempt;
+    discovering=false;discoveryPaused=true;
+    void invoke('online_stop_discovery',{requestId}).catch(()=>{});
   }
 
   function showGitHubAccount(){
@@ -296,15 +303,23 @@
     }catch(error){if(attempt===signInAttempt){deviceCode='';onlineError=String(error);}}
   }
   async function restoreGitHubAccount(){
+    const attempt=++restoreAttempt;
+    restoringAccount=true;restoreSkipped=false;restoreAccountError='';
     try{
-      account=await invoke<GitHubAccount|null>('online_restore')??undefined;
+      const restored=await invoke<GitHubAccount|null>('online_restore');
+      if(attempt!==restoreAttempt)return;
+      account=restored??undefined;
       if(account){
         commit();typingField=null;
         if(editing && !onlineProject && onlineIdentity)editorId=onlineIdentity.id;
         void discoverProjects();
       }
-    }catch(error){restoreAccountError=String(error);}
-    finally{restoringAccount=false;}
+    }catch(error){if(attempt===restoreAttempt)restoreAccountError=String(error);}
+    finally{if(attempt===restoreAttempt)restoringAccount=false;}
+  }
+  function skipGitHubRestore(){
+    ++restoreAttempt;
+    restoringAccount=false;restoreSkipped=true;
   }
   async function signOut(){
     if(onlineWorking || busy)return;
@@ -315,7 +330,8 @@
       if(editing && editorId===onlineIdentity?.id){commit();typingField=null;toggleEdit();}
       account=undefined;
       restoreAccountError='';
-      ++discoveryAttempt;discoveredProjects=[];discovering=false;discoveryError='';
+      if(discovering)stopDiscovery();
+      discoveredProjects=[];discoveryPaused=false;discoveryError='';
       if(onlineProject)onlineProject={...onlineProject,writable:false};
     }catch(error){onlineError=String(error);}
     finally{onlineWorking=false;}
@@ -1242,7 +1258,7 @@
   }
   onMount(()=>{
     if(isTauri())void invoke<string|null>('github_client_id').then(id=>{configuredClientId=id??'';}).catch(()=>{});
-    if(isTauri())void restoreGitHubAccount();
+    const restoreFrame=isTauri()?requestAnimationFrame(()=>{if(!restoreSkipped)void restoreGitHubAccount();}):undefined;
     if(isTauri())void getVersion().then(version=>{
       appVersion=version;
       recordActivity('Startup','Tenkivo '+version+' started.');
@@ -1274,7 +1290,7 @@
     const refresh=()=>{if(welcome)void checkRecent();};
     window.addEventListener('focus',refresh);
     window.addEventListener('beforeunload',before);
-    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
+    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
   });
 </script>
 
@@ -1291,13 +1307,28 @@
 
 {#snippet gitHubAccountButton()}
   {#if isTauri()}
-    <button title="GitHub account" disabled={restoringAccount} onclick={showGitHubAccount}>{restoringAccount?'Restoring session…':account?'@'+account.login:'Sign in with GitHub'}</button>
+    {#if restoringAccount}
+      {#if !welcome}{@render githubRestoreProgress()}{/if}
+    {:else if restoreSkipped && !welcome}
+      <button onclick={()=>restoreGitHubAccount()}>Reconnect to GitHub</button>
+    {:else}
+      <button title="GitHub account" onclick={showGitHubAccount}>{account?'@'+account.login:'Sign in with GitHub'}</button>
+    {/if}
   {/if}
+{/snippet}
+
+{#snippet githubRestoreProgress()}
+  <div class="github-startup-status">
+    <span role="status">Restoring your GitHub session…</span>
+    <button onclick={skipGitHubRestore}>Skip for now</button>
+  </div>
 {/snippet}
 
 {#snippet discoverableProjects()}
   <div class="row"><h3>Available projects</h3><button disabled={discovering || busy} onclick={discoverProjects}>Refresh</button></div>
-  {#if discovering}<p role="status">Finding your GitHub projects…</p>{/if}
+  {#if discovering}
+    <div class="github-startup-status"><span role="status">Finding your GitHub projects…</span><button onclick={stopDiscovery}>Cancel search</button></div>
+  {:else if discoveryPaused}<p role="status">Search cancelled. Select Refresh to try again.</p>{/if}
   {#if discoveryError}<p role="alert">{discoveryError}</p>{/if}
   {#each discoveredProjects as entry (entry.repo)}
     <div class="recent-project">
@@ -1305,7 +1336,7 @@
       <span>{entry.writable?'Can edit':'Read only'}</span>
     </div>
   {:else}
-    {#if !discovering && !discoveryError}<p>Online projects appear here after you accept their GitHub invitation.</p>{/if}
+    {#if !discovering && !discoveryPaused && !discoveryError}<p>Online projects appear here after you accept their GitHub invitation.</p>{/if}
   {/each}
 {/snippet}
 
@@ -1362,8 +1393,12 @@
               <button disabled={launching || busy || restoringAccount} onclick={()=>showOnline('create')}>New online project…</button>
               <button disabled={launching || busy || restoringAccount} onclick={()=>showOnline('open')}>Open online project…</button>
             </div>
-            {#if account}{@render discoverableProjects()}
-            {:else if !restoringAccount}<p>Sign in with GitHub to use online projects.</p>{/if}
+            {#if restoringAccount}{@render githubRestoreProgress()}
+            {:else if account}{@render discoverableProjects()}
+            {:else if restoreSkipped}
+              <p role="status">GitHub was skipped for now. Local projects are ready.</p>
+              <button class="github-reconnect" onclick={()=>restoreGitHubAccount()}>Reconnect to GitHub</button>
+            {:else}<p>Sign in with GitHub to use online projects.</p>{/if}
           </section>
         {/if}
       </div>

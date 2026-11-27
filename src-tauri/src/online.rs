@@ -3,7 +3,10 @@ use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    path::PathBuf,
+    sync::{atomic::AtomicU64, Mutex},
+};
 use tauri::State;
 
 pub mod access;
@@ -22,11 +25,11 @@ pub fn github_client_id() -> Option<&'static str> {
         .or(Some(TENKIVO_GITHUB_CLIENT_ID))
 }
 
-pub struct Online(Mutex<Session>, PathBuf);
+pub struct Online(Mutex<Session>, PathBuf, AtomicU64);
 
 impl Online {
     pub fn new(data_dir: PathBuf) -> Self {
-        Self(Mutex::new(Session::default()), data_dir)
+        Self(Mutex::new(Session::default()), data_dir, AtomicU64::new(0))
     }
 }
 
