@@ -3,6 +3,7 @@ use std::{fs, io::Write, path::Path};
 mod attachments;
 mod export;
 mod updates;
+mod online;
 #[tauri::command]
 fn update_status() -> bool {
     std::env::args().nth(1).as_deref() == Some("--update-failed")
@@ -151,6 +152,7 @@ fn main() {
         }
     }
     tauri::Builder::default()
+        .manage(online::Online::default())
         .setup(|app| {
             #[cfg(windows)]
             {
@@ -191,6 +193,11 @@ fn main() {
         })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            online::online_sign_in,
+            online::online_poll,
+            online::online_sign_out,
+            online::online_open,
+            online::online_save,
             open_project,
             startup_project,
             project_availability,

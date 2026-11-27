@@ -226,10 +226,103 @@
   }
   let editing = $state(false), inline = $state(''), dirty = $state(false), busy = $state(false);
   let theme = $state(localStorage.getItem('studio-theme') || 'System'), path = $state(''), status = $state('');
+  type GitHubAccount={id:number;login:string};
+  type OnlineProject={repo:string;branch:string;sha:string;writable:boolean};
+  let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
+  let onlineRepo=$state(localStorage.getItem('studio-online-repo')??'');
+  let clientId=$state(localStorage.getItem('studio-github-client-id')??'');
+  let onlineError=$state(''),deviceCode=$state(''),onlineWorking=$state(false);
+  let signInTimer:ReturnType<typeof setTimeout>|undefined, signInAttempt=0;
+  const onlineIdentity=$derived(account?{id:'github:'+account.id,name:account.login,icon:'🐙'}:undefined);
+
+  function showOnline(){
+    onlineRepo=onlineProject?.repo??onlineRepo;
+    onlineError='';
+    ask('Online project');
+  }
+  async function requestSignIn(){
+    const attempt=++signInAttempt;
+    clearTimeout(signInTimer);
+    onlineWorking=true;onlineError='';deviceCode='';
+    try{
+      const prompt=await invoke<{user_code:string;interval:number}>('online_sign_in',{clientId});
+      if(attempt!==signInAttempt)return;
+      localStorage.setItem('studio-github-client-id',clientId.trim());
+      deviceCode=prompt.user_code;
+      signInTimer=setTimeout(()=>void pollSignIn(attempt),prompt.interval*1000);
+    }catch(error){if(attempt===signInAttempt)onlineError=String(error);}
+    finally{if(attempt===signInAttempt)onlineWorking=false;}
+  }
+  async function pollSignIn(attempt:number){
+    try{
+      const result=await invoke<{status:'pending';interval:number}|{status:'signed_in';account:GitHubAccount}>('online_poll');
+      if(attempt!==signInAttempt)return;
+      if(result.status==='pending'){
+        signInTimer=setTimeout(()=>void pollSignIn(attempt),result.interval*1000);
+      }else{
+        account=result.account;deviceCode='';
+      }
+    }catch(error){if(attempt===signInAttempt){deviceCode='';onlineError=String(error);}}
+  }
+  async function signOut(){
+    if(onlineWorking || busy)return;
+    if(onlineProject && dirty){onlineError='Save your changes or export a local copy before signing out.';return;}
+    ++signInAttempt;clearTimeout(signInTimer);deviceCode='';onlineError='';
+    try{
+      await invoke('online_sign_out');account=undefined;
+      if(onlineProject && editing)toggleEdit();
+      if(onlineProject)onlineProject={...onlineProject,writable:false};
+    }catch(error){onlineError=String(error);}
+  }
+  function checkOnlineAttachments(doc:Project){
+    const pages=[...doc.pages,...doc.trash??[],...(doc.pageHistory??[]).map(version=>version.page)];
+    if(pages.some(page=>page.items.some(item=>item.attachment)))
+      throw Error('Online projects do not support local file attachments, including those in page history.');
+  }
+  function sharedDocument(){
+    const pageHistory=checkpointPages();
+    checkOnlineAttachments({...project,pageHistory});
+    return {pageHistory,raw:JSON.stringify({...project,pageHistory})};
+  }
+  async function accessOnline(action:'open'|'publish'|'reload'){
+    if(onlineWorking || busy || !account)return;
+    const repo=action==='reload' ? onlineProject?.repo : onlineRepo.trim();
+    if(!repo || (action==='publish' && (welcome || onlineProject)))return;
+    onlineWorking=true;busy=true;onlineError='';
+    try{
+      if(action==='publish'){
+        commit();
+        await invoke('online_save',{repo,branch:null,sha:null,document:sharedDocument().raw});
+        status='Online copy published · '+repo;
+      }else{
+        const {document,...remote}=await invoke<Omit<OnlineProject,'repo'> & {document:string}>('online_open',{repo,branch:action==='reload'?onlineProject?.branch:null});
+        if(!await load(document,'',{repo,...remote}))return;
+        status='Online project opened · '+repo;
+      }
+      onlineRepo=repo;
+      localStorage.setItem('studio-online-repo',repo);
+      dialog.close();
+    }catch(error){onlineError=String(error);}
+    finally{onlineWorking=false;busy=false;}
+  }
+  async function downloadOnlineCopy(){
+    if(busy || !onlineProject)return;
+    busy=true;onlineError='';
+    try{
+      const destination=await save({defaultPath:project.name+'.tkv',filters:fileFilters});
+      if(destination){
+        commit();
+        await invoke('save_project',{path:destination,document:JSON.stringify({...project,pageHistory:checkpointPages()})});
+        status='Local copy saved';dialog.close();
+      }
+    }catch(error){onlineError=String(error);}
+    finally{busy=false;}
+  }
   let fileDialog:HTMLDialogElement, incoming=$state<string[]>([]), copying=$state(false), importError=$state(''), playing=$state('');
   let dropAt={x:0,y:0};
   function offerFiles(paths:string[],x:number,y:number){
     if(!editing){status=readHint;return;}
+    if(onlineProject){status='Local file attachments require a local project.';return;}
     if(!paths.length || document.querySelector('dialog[open]'))return;
     incoming=paths;dropAt={x,y};importError='';fileDialog.showModal();
   }
@@ -261,7 +354,7 @@
     if(kind==='Note' || kind==='Frame'){add(kind,insertAt);return;}
     if(kind==='Page link'){linkPage=project.pages.find(p=>p.id!==current)?.id??current;ask('Add page link');return;}
     if(kind==='Web link'){linkUrl='';ask('Add web link');return;}
-    if(!isTauri()){imageInput.click();return;}
+    if(!isTauri() || onlineProject){imageInput.click();return;}
     try{
       const value=await open({multiple:true,directory:kind==='Folder',filters:kind==='Image'?[{name:'Images',extensions:['png','jpg','jpeg','gif','webp']}]:undefined});
       if(value)offerFiles(value,insertAt?.x??(width/2-tx)/zoom,insertAt?.y??(height/2-ty)/zoom);
@@ -335,7 +428,7 @@
   let draftUsers=$state<ProjectUser[]>([]), editorId=$state('');
   let pickerUsers=$state<ProjectUser[]>([]), selectedUser=$state(''),registering=$state(false);
   let userName=$state(''),userIcon=$state(userIcons[0]);
-  let editor=$derived(project.users?.find(u=>u.id===editorId));
+  let editor=$derived(onlineProject?onlineIdentity:project.users?.find(u=>u.id===editorId));
   function normalizeName(value:string){return value.trim().toLowerCase();}
   let validUsers=$derived(draftUsers.every(u=>u.name.trim()) && new Set(draftUsers.map(u=>normalizeName(u.name))).size===draftUsers.length);
   let validRegistration=$derived(userName.trim()!=='' && !project.users?.some(u=>normalizeName(u.name)===normalizeName(userName)));
@@ -344,6 +437,13 @@
     catch{return [];}
   }
   function selectEditor(){
+    if(onlineProject){
+      if(!onlineIdentity){showOnline();return;}
+      if(!onlineProject.writable){status='Reload the project after signing in with write access.';return;}
+      editorId=onlineIdentity.id;editing=true;
+      if(status===readHint)status='';
+      return;
+    }
     const users=project.users??[];
     const last=recentEditors().map(id=>users.find(u=>u.id===id)).find(Boolean);
     pickerUsers=last?[last,...users.filter(u=>u.id!==last.id)]:[...users];
@@ -393,7 +493,7 @@
         if(o.departments)o.departments=o.departments.filter(id=>allowed.has(id));
       }
     }
-    project.users=draftUsers.map(u=>({...u,name:u.name.trim()}));
+    if(!onlineProject)project.users=draftUsers.map(u=>({...u,name:u.name.trim()}));
     project.name=draftName.trim();project.description=draftDescription.trim();
     project.catalog=draftCatalog.map(d=>({...d,name:d.name.trim()}));setFilters(filters.filter(id=>allowed.has(id)));change();if(close)dialog.close();
   }
@@ -697,7 +797,7 @@
     const pageHistory=project.pageHistory;
     const {pageHistory:_,...editable}=entry.doc;
     project={...structuredClone(editable),pageHistory};revision=next;
-    if(!project.users?.some(u=>u.id===editorId)){stopDrawing();editing=false;editorId='';}
+    if(!onlineProject && !project.users?.some(u=>u.id===editorId)){stopDrawing();editing=false;editorId='';}
     current=project.pages.find(p=>p.id===affectedPage)?.id??project.pages.find(p=>p.id===entry.page)?.id??project.pages[0].id;
     ids=ids.filter(id=>board.items.some(o=>o.id===id));
     filters=filters.filter(d=>departments.includes(d));
@@ -931,7 +1031,7 @@
   async function discard(){return !dirty || (isTauri()?await confirm('Discard unsaved changes?'):window.confirm('Discard unsaved changes?'));}
   async function closeProject(){
     if(busy || !await discard())return;
-    stopDrawing();welcome=true;welcomeError='';path='';status='';editing=false;
+    stopDrawing();welcome=true;welcomeError='';path='';onlineProject=undefined;status='';editing=false;
     project=initial;current=initial.pages[0].id;resetViews();resetEdits(true);
     inline='';frameOnly='';titleId='';playing='';range=undefined;marquee=undefined;
     gesture=undefined;drag=undefined;liveBox=undefined;
@@ -949,7 +1049,7 @@
         const location=isTauri()?await save({defaultPath:next.name+'.tkv',filters:fileFilters}):'';
         if(location===null)return;
         if(location)await invoke('save_project',{path:location,document:JSON.stringify(next)});
-        project=next;path=location;welcome=false;editorId='';editing=false;showFps=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
+        project=next;path=location;onlineProject=undefined;welcome=false;editorId='';editing=false;showFps=false;resetViews();await navigate(p);resetEdits(!!location);rememberProject(location);status='Project created';dialog.close();selectEditor();
       }catch(error){creationError=String(error);recordError('Create project',error);}
       finally{busy=false;}
       return;
@@ -958,14 +1058,16 @@
     const p=page(name.trim());p.parentId=pageParent;project.pages.push(p);await navigate(p);
     change();dialog.close();
   }
-  async function load(raw:string,location:string){
+  async function load(raw:string,location:string,remote?:OnlineProject){
     const data:unknown=JSON.parse(raw);
     if(data && typeof data==='object' && 'pages' in data && Array.isArray(data.pages)){
       migrateLegacyDiagrams(data as Project);
     }
     if(!validProject(data))throw Error('Unsupported or invalid project.');
-    if(!await discard())return;
-    project=data;path=location;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;showFps=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
+    if(remote)checkOnlineAttachments(data);
+    if(!await discard())return false;
+    project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;showFps=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
+    return true;
   }
   async function openFile(){
     if(!isTauri()){fileInput.click();return;}
@@ -975,21 +1077,28 @@
   async function saveFile(){
     if(busy)return;busy=true;
     try{
-      const location=isTauri()?(path || await save({defaultPath:project.name+'.tkv',filters:fileFilters})):'';
-      if(isTauri() && !location)return;
+      const remote=onlineProject;
+      if(remote && (!account || !remote.writable)){status='Sign in to GitHub with write access to save this project.';return;}
+      const location=isTauri() && !remote?(path || await save({defaultPath:project.name+'.tkv',filters:fileFilters})):'';
+      if(isTauri() && !remote && !location)return;
       commit();typingField=null;const saving=revisions[revision];
-      const pageHistory=checkpointPages();
-      const raw=JSON.stringify({...project,pageHistory});
-      if(location){await invoke('save_project',{path:location,document:raw});path=location;rememberProject(location);}
+      const shared=remote?sharedDocument():undefined;
+      const pageHistory=shared?.pageHistory??checkpointPages();
+      const raw=shared?.raw??JSON.stringify({...project,pageHistory});
+      if(remote){
+        const {sha}=await invoke<{sha:string}>('online_save',{repo:remote.repo,branch:remote.branch,sha:remote.sha,document:raw});
+        onlineProject={...remote,sha};
+      }else if(location){await invoke('save_project',{path:location,document:raw});path=location;rememberProject(location);}
       else{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([raw]));a.href=url;a.download=project.name+'.tkv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
       project.pageHistory=pageHistory;
       savedRevision={...saving,doc:{...saving.doc,pageHistory}};
       if(revisions[revision]===saving)revisions[revision]=savedRevision;
-      dirty=JSON.stringify(project)!==raw;status='Project saved';
+      dirty=JSON.stringify(project)!==raw;status=remote?'Project saved to GitHub':'Project saved';
     }catch(e){recordError('Project file',e);status=String(e);if(welcome)welcomeError=status;}finally{busy=false;}
   }
   let exporter:ExportDialog;
   async function ensureExportSaved(){
+    if(onlineProject){status='Save a local copy before creating a project archive.';return false;}
     await saveFile();
     return !!path && !dirty;
   }
@@ -1067,7 +1176,7 @@
       if(folder===null || !await discard())return;
       const example=sample();example.name='Template Project';example.pages.push(benchmark());
       const location=isTauri()?await invoke<string>('create_template',{folder,document:JSON.stringify(example)}):'';
-      project=example;path=location;welcome=false;rememberProject(location);editorId='';editing=false;showFps=true;resetViews();await navigate(example.pages[0]);resetEdits(!!location);
+      project=example;path=location;onlineProject=undefined;welcome=false;rememberProject(location);editorId='';editing=false;showFps=true;resetViews();await navigate(example.pages[0]);resetEdits(!!location);
       status=location?'Template created in '+folder:'Template ready. Save to download it.';selectEditor();
     }catch(err){status=String(err);}finally{busy=false;}
   }
@@ -1103,7 +1212,7 @@
     const refresh=()=>{if(welcome)void checkRecent();};
     window.addEventListener('focus',refresh);
     window.addEventListener('beforeunload',before);
-    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
+    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);void listener?.then(stop=>stop());cancelAnimationFrame(id);window.removeEventListener('beforeunload',before);};
   });
 </script>
 
@@ -1145,7 +1254,7 @@
   {#if welcome}
     <main class="welcome">
       <div class="welcome-head"><h1><img src={tenkivoIcon} alt="" width="48" height="48"/>Tenkivo</h1><div class="app-actions"><button title="Settings" aria-label="Settings" onclick={()=>settings.showModal()}>⚙</button>{@render updatesButton()}{@render logsButton()}</div></div>
-      <div class="welcome-actions"><button disabled={launching} onclick={newProject}>New project…</button><button disabled={launching} onclick={openFile}>Open project…</button></div>
+      <div class="welcome-actions"><button disabled={launching} onclick={newProject}>New project…</button><button disabled={launching} onclick={openFile}>Open project…</button>{#if isTauri()}<button disabled={launching} onclick={showOnline}>Online project…</button>{/if}</div>
       {#if status}<p role="status">{status}</p>{/if}
       <h2>Recent projects</h2>
       {#if welcomeError}<p role="alert">{welcomeError}</p>{/if}
@@ -1165,6 +1274,7 @@
         <button onclick={()=>{fileMenu.open=false;newProject();}}>New…</button>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void createTemplate();}}>New Template…</button>
         <button onclick={()=>{fileMenu.open=false;void openFile();}}>Open…</button>
+        {#if isTauri()}<button disabled={busy} onclick={()=>{fileMenu.open=false;showOnline();}}>Online project…</button>{/if}
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close</button>
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveFile();}}>Save</button>
@@ -1343,7 +1453,7 @@
           <hr/>
         {/if}
         <div class="menu-heading">New</div>
-        {#each ['Note','Image','Frame','Drawing','Page link','Web link',...(isTauri()?['File','Folder']:[])] as kind}
+        {#each ['Note','Image','Frame','Drawing','Page link','Web link',...(isTauri() && !onlineProject?['File','Folder']:[])] as kind}
           <button disabled={!editing} onclick={()=>insert(kind)}>{kind}</button>
         {/each}
         {#if !menu.fromAdd}<button class="menu-export" onclick={()=>{menu=undefined;exporter.show(board);}}>Export page as PDF…</button>{/if}
@@ -1379,7 +1489,7 @@
   <div class="status" role="status"><i></i>{#if status==='PDF exported' && exportedPdf}
     <button class="export-result" title="Open exported PDF" onclick={()=>openExport(false)}>PDF exported ↗</button>
     <button class="export-result" onclick={()=>openExport(true)}>Open folder</button>
-    {:else}{status || 'Local project'}{/if} <span>{showFps?fps+' fps　·　':''}{board.items.length} objects</span></div>
+    {:else}{status || (onlineProject?'GitHub · '+onlineProject.repo:'Local project')}{/if} <span>{showFps?fps+' fps　·　':''}{board.items.length} objects</span></div>
   {/if}
   <dialog bind:this={fileDialog} oncancel={e=>{if(copying)e.preventDefault();}}>
     <h2>Add to canvas</h2><p>{incoming.length===1?incoming[0]:incoming.length+' items selected'}</p>
@@ -1422,6 +1532,34 @@
         <button type="button" onclick={()=>storeLink()}>Remove link</button>{/if}
       <button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={linkType==='web'?!webAddress(webTarget):!project.pages.some(p=>p.id===targetPage) || (!!targetItem && !choices.some(o=>o.id===targetItem))}>Apply link</button>
     </form>
+  {:else if dialogType==='Online project'}
+    {#if account}
+      <p>Signed in as <strong>@{account.login}</strong>.</p>
+      {#if onlineProject}<p>Current project · {onlineProject.repo} ({onlineProject.branch})</p>{/if}
+      <label>Private repository<input placeholder="owner/repository" bind:value={onlineRepo} disabled={onlineWorking}/></label>
+      <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>
+      {#if !welcome && !onlineProject}
+        <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('publish')}>Publish a copy</button>
+      {:else if onlineProject}
+        <button disabled={busy} onclick={()=>accessOnline('reload')}>Reload from GitHub</button>
+      {/if}
+      <button disabled={busy} onclick={signOut}>Sign out</button>
+    {:else if deviceCode}
+      <p>Enter this code on GitHub to connect your account.</p>
+      <p><strong>{deviceCode}</strong></p>
+      <a href="https://github.com/login/device" onclick={e=>{e.preventDefault();void invoke('open_web',{url:'https://github.com/login/device'}).catch(error=>onlineError=String(error));}}>Open GitHub sign-in ↗</a>
+      <button onclick={signOut}>Cancel sign-in</button>
+    {:else}
+      <form onsubmit={e=>{e.preventDefault();void requestSignIn();}}>
+        <label>GitHub App Client ID<input required bind:value={clientId} disabled={onlineWorking}/></label>
+        <button disabled={onlineWorking || !clientId.trim()}>Sign in with GitHub</button>
+      </form>
+    {/if}
+    {#if onlineError}<p role="alert">{onlineError}</p>{/if}
+    <div>
+      {#if onlineProject}<button disabled={busy} onclick={downloadOnlineCopy}>Save a local copy…</button>{/if}
+      <button disabled={busy || onlineWorking} onclick={()=>dialog.close()}>Close</button>
+    </div>
   {:else if dialogType==='Project settings' || dialogType==='New project'}
     {@const creating=dialogType==='New project'}
     <form class="project-form" onsubmit={e=>{e.preventDefault();if(section)leaveSection(true);else if(creating)void named();else applyOptions();}}>
@@ -1429,7 +1567,8 @@
       <label>Description<textarea bind:value={draftDescription}></textarea></label>
       </fieldset>
       <button class="add-project-entry" type="button" onclick={()=>openSection('Departments')}>Departments　›</button>
-      <button class="add-project-entry" type="button" onclick={()=>openSection('Users')}>Users　›</button>
+      {#if onlineProject}<p>Project access is managed through the private GitHub repository.</p>
+      {:else}<button class="add-project-entry" type="button" onclick={()=>openSection('Users')}>Users　›</button>{/if}
       {:else if section==='Departments'}<fieldset disabled={!creating && !editing}>
       {#each draftCatalog as d (d.id)}
         <div class="department-editor"><input type="color" aria-label={'Color for '+d.name} bind:value={d.color}/>

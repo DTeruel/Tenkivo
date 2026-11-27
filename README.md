@@ -142,6 +142,19 @@ pnpm desktop dev
 
 For live desktop iteration on Windows, open `Live preview.cmd` from the checkout. It runs Tauri with Vite hot reload. For a portable build run `pnpm desktop build --no-bundle` on Windows and copy `src-tauri/target/release/tenkivo.exe` to a writable folder as `Tenkivo.exe`. To create an installer on request, use `pnpm desktop build --bundles nsis`.
 
+## Online projects
+
+Tenkivo can keep a shared project in a private GitHub repository. Each participant signs in with their own GitHub account. GitHub repository permissions determine who can read and save, and Tenkivo attributes page changes to the signed-in account.
+
+### Set up GitHub access
+
+1. Create a [GitHub App](https://github.com/settings/apps/new). Enable **Device Flow**, disable the webhook if you do not need one, and set the repository permission **Contents** to **Read and write**. Copy the app's public **Client ID**. A client secret or private key is unnecessary.
+2. Create a dedicated **private** repository for the project and initialize it with a README. Install the GitHub App on that repository. Invite participants through GitHub and grant write access to anyone who should edit.
+3. Open a local project in Tenkivo. Select **File → Online project…**, enter the public Client ID, and sign in using the code and verification page. Enter the repository as `owner/name` and select **Publish a copy**.
+4. Open the shared copy with **Open from GitHub**. This reads `project.tkv` from the repository's default branch. Other participants use the same Client ID and repository name. The desktop session keeps the GitHub access token in memory, so signing in again is required after restarting Tenkivo.
+
+Use **Save** to commit changes to GitHub. If another participant has already saved, GitHub can reject the outdated revision. Use **Save a local copy…** to preserve your edits and **Reload from GitHub** to load the latest revision. This version has manual reload and save, with no live co-editing or merge. Online projects support embedded images and web links within a 1 MiB project document, but do not support local file or folder attachments.
+
 ## Portable releases
 
 On Windows, double-click **Publish Tenkivo.cmd** from a clean `main` checkout. The publisher uses the existing Git credentials for `origin`. It shows the current version, suggests the next patch version and previews the release notes it generated from commits since the version last changed. After you type `PUBLISH`, it commits the version files and pushes `main` and the annotated version tag together. GitHub Actions builds and publishes the Windows portable files. Follow the run under **Actions → Publish Tenkivo for Windows**. If the push fails, fix the Git error and run the publisher again to retry the local tag. If the build or upload fails, rerun the failed job in Actions. Wait for the run to finish before starting another release.

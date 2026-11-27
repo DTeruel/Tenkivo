@@ -6,7 +6,7 @@ Status of the requested desktop application as of 0.10.0.
 | --- | --- | --- |
 | Distribution | Windows portable build, installer on request, release notes and startup update check | macOS build and verification, published release-to-release update test |
 | Projects | Create, open, manually save, move project and assets, edit display name and description | Custom project icons, project deletion and direct ZIP import |
-| Collaboration | Local projects | GitHub project setup, repository permissions, user profiles, page reservations, presence, background synchronization and offline drafts |
+| Collaboration | Local projects, GitHub sign-in and shared projects in private repositories, revision checks on save | Page reservations, presence, automatic synchronization, offline drafts and shared file attachments |
 | Navigation | Page hierarchy, drag to reparent, page shortcuts, viewport history, read/edit mode, page trash | Dedicated folders, custom shared views, per-view hidden pages and restoration, full breadcrumb trail |
 | Content | Notes, font size and auto-fit, images, grouped frames, files, folders, shortcuts, web link cards and YouTube embeds | Rich text formatting, spreadsheet-style tables, diagram connectors |
 | References | Editable object titles, links from text spans and objects to pages and objects, focused destination navigation | Reference support for future table and diagram elements |
