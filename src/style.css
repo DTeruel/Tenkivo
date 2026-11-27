@@ -141,7 +141,7 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .tag-preset-preview label{display:flex;align-items:center;gap:8px;margin:0;padding:4px 0;color:var(--ink)}
 .tag-preset-preview input{width:auto;margin:0}
 .department-editor select {width:4em;flex:none}
-.project-form > .add-project-entry + .add-project-entry {margin-bottom:16px}
+.project-form > .add-project-entry + .add-project-entry {margin-top:8px;margin-bottom:16px}
 
 .attachment-actions {display:flex;flex-wrap:wrap;gap:6px}
 .attachment-actions button {border:1px solid var(--line);background:var(--paper);padding:5px 9px}
