@@ -348,6 +348,11 @@
     return names+(editors.length===1?' is editing this page':' are editing this page');
   }
   const canSaveProject=$derived(!busy && (!onlineProject || !!(account && onlineProject.writable)));
+  function refreshOnlineProject(){
+    if(!onlineProject || busy || restoringAccount)return;
+    if(account)void accessOnline('reload');
+    else showGitHubAccount();
+  }
   let restoringAccount=$state(isTauri()),restoreAccountError=$state('');
   let restoreSkipped=$state(false), restoreAttempt=0;
   let onlineMode=$state<'open'|'create'|'save'>('open');
@@ -1777,14 +1782,16 @@
         <button disabled={!canSaveProject} onclick={()=>{fileMenu.open=false;void saveFile();}}>Save</button>
         {#if onlineProject}
           <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveAsLocal();}}>Save as Local…</button>
-          <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;if(account)void accessOnline('reload');else showGitHubAccount();}}>Reload from GitHub</button>
+          <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;refreshOnlineProject();}}>Refresh from GitHub</button>
         {:else if isTauri()}
           <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('save');}}>Save as Online…</button>
         {/if}
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export…</button>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
-      </div></details><button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button></nav>
+      </div></details><button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
+      {#if onlineProject}<button disabled={busy || restoringAccount} onclick={refreshOnlineProject}>Refresh from GitHub</button>{/if}
+    </nav>
     <div class="app-actions">
       {@render gitHubAccountButton()}
       <button aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onclick={()=>ask('Keyboard shortcuts')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M8 15h8"/></svg></button>
