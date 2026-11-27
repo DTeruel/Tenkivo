@@ -6,11 +6,13 @@
   type VerifiedUser=User & {name:string|null};
   type Member=User & {role:string;removable:boolean};
   type Invitation={id:number;invitee:User|null;permissions:string};
-  type Access={collaborators:Member[];invitations:Invitation[]};
+  type Access={collaborators:Member[];invitations:Invitation[];supports_read_only:boolean};
+  type InviteRole='read_only'|'editor';
   type Removal={kind:'member';member:Member}|{kind:'invitation';invitation:Invitation};
   let {repo,onback}: {repo:string;onback:()=>void}=$props();
   let access=$state<Access>(),verified=$state<VerifiedUser>(),removal=$state<Removal>();
   let login=$state(''),working=$state(false),error=$state(''),message=$state('');
+  let role=$state<InviteRole>('editor');
 
   async function run(action:()=>Promise<void>){
     if(working)return;
@@ -22,15 +24,19 @@
   async function fetchAccess(){access=await invoke<Access>('online_project_access',{repo});}
   async function verify(e:SubmitEvent){
     e.preventDefault();
-    await run(async()=>{verified=await invoke<VerifiedUser>('online_find_user',{login:login.trim()});});
+    await run(async()=>{
+      verified=await invoke<VerifiedUser>('online_find_user',{login:login.trim()});
+      role=access?.supports_read_only?'read_only':'editor';
+    });
   }
   async function invite(){
     const user=verified;
     if(!user)return;
     await run(async()=>{
-      const pending=await invoke<boolean>('online_invite_editor',{repo,login:user.login,userId:user.id});
+      const pending=await invoke<boolean>('online_invite_collaborator',{repo,login:user.login,userId:user.id,role});
       verified=undefined;login='';
-      message=pending?'Invitation sent to @'+user.login+'.':'Write access granted to @'+user.login+'.';
+      const label=role==='read_only'?'Read-only':'Editor';
+      message=pending?label+' invitation sent to @'+user.login+'.':label+' access granted to @'+user.login+'.';
       await fetchAccess();
     });
   }
@@ -85,7 +91,17 @@
     </form>
     {#if verified}
       <p>Verified account <strong>@{verified.login}</strong>{verified.name?' · '+verified.name:''}.</p>
-      <button disabled={working} onclick={invite}>Invite as editor</button>
+      {#if access.supports_read_only}
+        <label>Access
+          <select bind:value={role} disabled={working}>
+            <option value="read_only">Read only</option>
+            <option value="editor">Can edit</option>
+          </select>
+        </label>
+      {:else}
+        <p>GitHub supports read-only collaborators on organization repositories.</p>
+      {/if}
+      <button disabled={working} onclick={invite}>{role==='read_only'?'Invite as viewer':'Invite as editor'}</button>
     {/if}
   {/if}
 {/if}

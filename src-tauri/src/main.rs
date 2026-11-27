@@ -191,7 +191,7 @@ fn main() {
             online::access::online_stop_discovery,
             online::access::online_project_access,
             online::access::online_find_user,
-            online::access::online_invite_editor,
+            online::access::online_invite_collaborator,
             online::access::online_remove_editor,
             online::access::online_cancel_invitation,
             open_project,

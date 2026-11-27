@@ -441,7 +441,20 @@ struct Repository {
     private: bool,
     default_branch: String,
     permissions: Option<Permissions>,
-    owner: Account,
+    owner: RepositoryOwner,
+}
+
+#[derive(Deserialize)]
+struct RepositoryOwner {
+    id: u64,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+impl Repository {
+    fn supports_read_only_collaborators(&self) -> bool {
+        self.owner.kind == "Organization"
+    }
 }
 
 #[derive(Deserialize)]

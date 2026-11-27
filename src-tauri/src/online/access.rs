@@ -191,6 +191,7 @@ struct Invitation {
 pub struct Access {
     collaborators: Vec<Collaborator>,
     invitations: Vec<Invitation>,
+    supports_read_only: bool,
 }
 
 #[tauri::command]
@@ -210,6 +211,7 @@ pub async fn online_project_access(
     let invitations = pages(&client, &token, &format!("{url}/invitations"), None, &[]).await
         .map_err(|error| format!("Could not list invitations. Check the GitHub App's Administration permission. {error}"))?;
     Ok(Access {
+        supports_read_only: details.supports_read_only_collaborators(),
         collaborators: collaborators
             .into_iter()
             .map(|user| Collaborator {
@@ -266,14 +268,29 @@ pub async fn online_find_user(
     find_user(&client()?, &token(&state).await?, &login).await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InviteRole {
+    ReadOnly,
+    Editor,
+}
+
 #[tauri::command]
-pub async fn online_invite_editor(
+pub async fn online_invite_collaborator(
     state: State<'_, Online>,
     repo: String,
     login: String,
     user_id: u64,
+    role: InviteRole,
 ) -> Result<bool, String> {
     let (client, token, url, details, signed_in) = admin_context(&state, &repo).await?;
+    let permission = match role {
+        InviteRole::ReadOnly if !details.supports_read_only_collaborators() => {
+            return Err("GitHub only supports read-only collaborators on organization repositories.".into());
+        }
+        InviteRole::ReadOnly => "pull",
+        InviteRole::Editor => "push",
+    };
     let user = find_user(&client, &token, &login).await?;
     if user.id != user_id {
         return Err("The account changed. Verify the username again.".into());
@@ -291,21 +308,19 @@ pub async fn online_invite_editor(
         .map_err(connection_error)?;
     if current.status().is_success() {
         let permission: Value = current.json().await.map_err(connection_error)?;
-        if matches!(permission["permission"].as_str(), Some("admin" | "write")) {
+        if matches!(permission["permission"].as_str(), Some("admin" | "maintain" | "write")) {
             return Err("This account already has write access.".into());
         }
     } else if current.status() != StatusCode::NOT_FOUND {
         checked(current)?;
     }
-    let response = checked(
-        client
-            .put(member_url)
-            .bearer_auth(&token)
-            .json(&json!({"permission":"push"}))
-            .send()
-            .await
-            .map_err(connection_error)?,
-    )?;
+    let invite = client.put(member_url).bearer_auth(&token);
+    let invite = if details.supports_read_only_collaborators() {
+        invite.json(&json!({"permission":permission}))
+    } else {
+        invite.header(reqwest::header::CONTENT_LENGTH, "0")
+    };
+    let response = checked(invite.send().await.map_err(connection_error)?)?;
     Ok(response.status() == StatusCode::CREATED)
 }
 
