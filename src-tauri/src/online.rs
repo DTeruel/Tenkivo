@@ -546,7 +546,7 @@ pub async fn online_save(
     if document.len() > GITHUB_FILE_LIMIT {
         return Err("GitHub cannot store a project document larger than 100 MiB. This limit applies to the document file only; images are stored separately.".into());
     }
-    if !assets.is_empty() {
+    if !assets.is_empty() || sha.is_some() {
         let project_sha = images::save_with_images(
             &client,
             &token,
@@ -557,11 +557,13 @@ pub async fn online_save(
             &assets,
         )
         .await?;
-        images::cache_saved(&state.1, &details.full_name, &assets);
-        return Ok(SavedProject {
-            sha: project_sha,
-            branch,
-        });
+        if let Some(project_sha) = project_sha {
+            images::cache_saved(&state.1, &details.full_name, &assets);
+            return Ok(SavedProject {
+                sha: project_sha,
+                branch,
+            });
+        }
     }
     let mut body = json!({"message":"Save Tenkivo project","content":STANDARD.encode(document)});
     if !use_default_branch {

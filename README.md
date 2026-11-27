@@ -158,6 +158,8 @@ Tenkivo includes the public Client ID of its GitHub App. To build against a diff
 
 For an online project, **Project settings → Project cache** can open the local image cache folder or clear its downloaded images. Tenkivo downloads them again when needed.
 
+When you save online, Tenkivo removes managed image files from the current branch if no active page or page in the trash uses them. Previous page versions can still retrieve their images from Git history. This change applies to future saves and keeps existing Git history intact.
+
 ## Portable releases
 
 On Windows, double-click **Publish Tenkivo.cmd** from a clean `main` checkout. The publisher uses the existing Git credentials for `origin`. It shows the current version, suggests the next patch version and previews the release notes it generated from commits since the version last changed. After you type `PUBLISH`, it commits the version files and pushes `main` and the annotated version tag together. GitHub Actions builds and publishes the Windows portable files. Follow the run under **Actions → Publish Tenkivo for Windows**. If the push fails, fix the Git error and run the publisher again to retry the local tag. If the build or upload fails, rerun the failed job in Actions. Wait for the run to finish before starting another release.

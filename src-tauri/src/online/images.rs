@@ -16,13 +16,27 @@ const IMAGE_DIR: &str = ".tenkivo/images";
 const IMAGE_REF: &str = "tenkivo-image:";
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(120);
 
-pub(super) type Assets = BTreeMap<String, Vec<u8>>;
+#[derive(Default)]
+pub(super) struct Assets {
+    files: BTreeMap<String, Vec<u8>>,
+    retained: BTreeSet<String>,
+}
+
+impl Assets {
+    pub(super) fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+}
 
 pub(super) fn git_sha(value: &Value) -> Result<&str, String> {
     value
         .as_str()
-        .filter(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
+        .filter(|sha| valid_git_sha(sha))
         .ok_or_else(|| "GitHub did not return a valid file revision.".into())
+}
+
+fn valid_git_sha(sha: &str) -> bool {
+    sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn digest(bytes: &[u8]) -> String {
@@ -48,9 +62,19 @@ fn asset_name(name: &str) -> Option<(&str, &'static str)> {
     .then_some((hash, media(extension)?))
 }
 
+fn parse_reference(reference: &str) -> Result<(&str, Option<&str>), String> {
+    let (name, sha) = reference
+        .split_once('@')
+        .map_or((reference, None), |(name, sha)| (name, Some(sha)));
+    if asset_name(name).is_none() || sha.is_some_and(|sha| !valid_git_sha(sha)) {
+        return Err("The project has an invalid image reference.".into());
+    }
+    Ok((name, sha))
+}
+
 fn visit_sources(
     document: &mut Value,
-    mut visit: impl FnMut(&mut String) -> Result<(), String>,
+    mut visit: impl FnMut(&mut String, bool) -> Result<(), String>,
 ) -> Result<(), String> {
     let Some(fields) = document.as_object_mut() else {
         return Err("Invalid project document.".into());
@@ -71,7 +95,7 @@ fn visit_sources(
                         continue;
                     }
                     if let Some(Value::String(source)) = item.get_mut("source") {
-                        visit(source)?;
+                        visit(source, field != "pageHistory")?;
                     }
                 }
             }
@@ -83,8 +107,8 @@ fn visit_sources(
 pub(super) fn separate(document: &str) -> Result<(String, Assets), String> {
     let mut content: Value =
         serde_json::from_str(document).map_err(|_| "Invalid project document.")?;
-    let mut assets = BTreeMap::new();
-    visit_sources(&mut content, |source| {
+    let mut assets = Assets::default();
+    visit_sources(&mut content, |source, retained| {
         let Some((mime, encoded)) = source
             .strip_prefix("data:")
             .and_then(|source| source.split_once(";base64,"))
@@ -103,7 +127,10 @@ pub(super) fn separate(document: &str) -> Result<(String, Assets), String> {
         }
         let name = format!("{}.{extension}", digest(&bytes));
         *source = format!("{IMAGE_REF}{name}");
-        assets.entry(name).or_insert(bytes);
+        if retained {
+            assets.retained.insert(name.clone());
+        }
+        assets.files.entry(name).or_insert(bytes);
         Ok(())
     })?;
     Ok((
@@ -183,7 +210,7 @@ pub(super) fn cache_saved(data_dir: &Path, repo: &str, assets: &Assets) {
         return;
     }
     if let Ok(folder) = cache_dir(data_dir, repo) {
-        for (name, bytes) in assets {
+        for (name, bytes) in &assets.files {
             if !folder.join(name).is_file() {
                 let _ = cache_file(&folder, name, bytes);
             }
@@ -202,13 +229,14 @@ pub(super) async fn hydrate(
 ) -> Result<String, String> {
     let mut document: Value =
         serde_json::from_slice(document).map_err(|_| "Invalid project document.")?;
-    let mut names = BTreeSet::new();
-    visit_sources(&mut document, |source| {
-        if let Some(name) = source.strip_prefix(IMAGE_REF) {
-            if asset_name(name).is_none() {
-                return Err("The project has an invalid image reference.".into());
+    let mut names = BTreeMap::new();
+    visit_sources(&mut document, |source, _| {
+        if let Some(reference) = source.strip_prefix(IMAGE_REF) {
+            let (name, sha) = parse_reference(reference)?;
+            let blob = names.entry(name.to_owned()).or_insert(None);
+            if let Some(sha) = sha {
+                *blob = Some(sha.to_owned());
             }
-            names.insert(name.to_owned());
         }
         Ok(())
     })?;
@@ -218,7 +246,7 @@ pub(super) async fn hydrate(
         cache_dir(data_dir, repo).ok()
     };
     let mut sources = BTreeMap::new();
-    for name in names {
+    for (name, sha) in names {
         let (hash, mime) = asset_name(&name).unwrap();
         let cached = folder.as_ref().and_then(|folder| {
             let path = folder.join(&name);
@@ -232,14 +260,16 @@ pub(super) async fn hydrate(
         let bytes = if let Some(bytes) = cached {
             bytes
         } else {
-            let bytes = raw_file(
+            let request = if let Some(sha) = sha {
+                client.get(format!("{url}/git/blobs/{sha}"))
+            } else {
                 client
                     .get(format!("{url}/contents/{IMAGE_DIR}/{name}"))
                     .query(&[("ref", branch)])
-                    .bearer_auth(token),
-            )
-            .await
-            .map_err(|error| format!("Could not download project image {name}. {error}"))?;
+            };
+            let bytes = raw_file(request.bearer_auth(token))
+                .await
+                .map_err(|error| format!("Could not download project image {name}. {error}"))?;
             if digest(&bytes) != hash {
                 return Err("A downloaded project image did not pass verification.".into());
             }
@@ -253,8 +283,9 @@ pub(super) async fn hydrate(
             format!("data:{mime};base64,{}", STANDARD.encode(bytes)),
         );
     }
-    visit_sources(&mut document, |source| {
-        if let Some(name) = source.strip_prefix(IMAGE_REF) {
+    visit_sources(&mut document, |source, _| {
+        if let Some(reference) = source.strip_prefix(IMAGE_REF) {
+            let (name, _) = parse_reference(reference)?;
             *source = sources
                 .get(name)
                 .ok_or("A project image could not be loaded.")?
@@ -327,6 +358,49 @@ async fn git_write(request: RequestBuilder, body: Value) -> Result<Value, String
     Ok(result)
 }
 
+async fn publish_tree(
+    client: &Client,
+    token: &str,
+    url: &str,
+    parent: &str,
+    base_tree: &str,
+    entries: Vec<Value>,
+    message: &str,
+) -> Result<(String, String), String> {
+    let tree = git_write(
+        client.post(format!("{url}/git/trees")).bearer_auth(token),
+        json!({"base_tree":base_tree,"tree":entries}),
+    )
+    .await?;
+    let tree_sha = git_sha(&tree["sha"])?;
+    let commit = git_write(
+        client.post(format!("{url}/git/commits")).bearer_auth(token),
+        json!({"message":message,"tree":tree_sha,"parents":[parent]}),
+    )
+    .await?;
+    Ok((git_sha(&commit["sha"])?.into(), tree_sha.into()))
+}
+
+fn image_entry(name: &str, sha: Option<&str>) -> Value {
+    json!({"path":format!("{IMAGE_DIR}/{name}"),"mode":"100644","type":"blob","sha":sha})
+}
+
+fn historic_references(document: &[u8]) -> Result<BTreeMap<String, String>, String> {
+    let mut document: Value =
+        serde_json::from_slice(document).map_err(|_| "Invalid project revision.")?;
+    let mut refs = BTreeMap::new();
+    visit_sources(&mut document, |source, _| {
+        if let Some(reference) = source.strip_prefix(IMAGE_REF) {
+            let (name, sha) = parse_reference(reference)?;
+            if let Some(sha) = sha {
+                refs.insert(name.to_owned(), sha.to_owned());
+            }
+        }
+        Ok(())
+    })?;
+    Ok(refs)
+}
+
 pub(super) async fn save_with_images(
     client: &Client,
     token: &str,
@@ -335,7 +409,7 @@ pub(super) async fn save_with_images(
     expected: Option<&str>,
     document: &str,
     assets: &Assets,
-) -> Result<String, String> {
+) -> Result<Option<String>, String> {
     let mut branch_url = Url::parse(&format!("{url}/branches")).map_err(|e| e.to_string())?;
     branch_url
         .path_segments_mut()
@@ -355,9 +429,9 @@ pub(super) async fn save_with_images(
         return Err("Create a README in the private repository to initialize its default branch before saving a project with images.".into());
     }
     let branch_head: Value = checked(response)?.json().await.map_err(connection_error)?;
-    let parent = git_sha(&branch_head["commit"]["sha"])?;
-    let base_tree = git_sha(&branch_head["commit"]["commit"]["tree"]["sha"])?;
-    let root = tree(client, token, url, base_tree).await?;
+    let mut parent = git_sha(&branch_head["commit"]["sha"])?.to_owned();
+    let mut base_tree = git_sha(&branch_head["commit"]["commit"]["tree"]["sha"])?.to_owned();
+    let root = tree(client, token, url, &base_tree).await?;
     let actual = root
         .iter()
         .find(|entry| entry.path == DOC && entry.kind == "blob")
@@ -366,7 +440,7 @@ pub(super) async fn save_with_images(
         return Err("GitHub already has a different project revision. Save as Local to keep your edits, then open or reload the online project.".into());
     }
 
-    let mut stored = BTreeSet::new();
+    let mut stored = BTreeMap::new();
     if let Some(hidden) = root
         .iter()
         .find(|entry| entry.path == ".tenkivo" && entry.kind == "tree")
@@ -380,22 +454,94 @@ pub(super) async fn save_with_images(
                 tree(client, token, url, &images.sha)
                     .await?
                     .into_iter()
-                    .filter(|entry| entry.kind == "blob")
-                    .map(|entry| entry.path),
+                    .filter(|entry| entry.kind == "blob" && asset_name(&entry.path).is_some())
+                    .map(|entry| (entry.path, entry.sha)),
             );
         }
     }
-    let mut entries = Vec::new();
-    for (name, bytes) in assets {
-        if stored.contains(name) {
+    if stored.is_empty() && assets.is_empty() {
+        return Ok(None);
+    }
+    let mut previous_history = BTreeMap::new();
+    if let Some(previous) = expected.filter(|_| {
+        assets
+            .files
+            .keys()
+            .any(|name| !assets.retained.contains(name) && !stored.contains_key(name))
+    }) {
+        if !valid_git_sha(previous) {
+            return Err("Invalid project revision.".into());
+        }
+        let exact_document = raw_file(
+            client
+                .get(format!("{url}/git/blobs/{previous}"))
+                .bearer_auth(token),
+        )
+        .await?;
+        previous_history = historic_references(&exact_document)?;
+    }
+
+    let mut entries: Vec<Value> = stored
+        .keys()
+        .filter(|name| !assets.retained.contains(*name))
+        .map(|name| image_entry(name, None))
+        .collect();
+    let mut archived: BTreeMap<&str, String> = BTreeMap::new();
+    let mut archive_entries = Vec::new();
+    for (name, bytes) in &assets.files {
+        let retained = assets.retained.contains(name);
+        if let Some(sha) = stored.get(name) {
+            if !retained {
+                archived.insert(name.as_str(), sha.to_owned());
+            }
             continue;
+        }
+        if !retained {
+            if let Some(sha) = previous_history.get(name) {
+                archived.insert(name.as_str(), sha.to_owned());
+                continue;
+            }
         }
         let blob = git_write(
             client.post(format!("{url}/git/blobs")).bearer_auth(token),
             json!({"content": STANDARD.encode(bytes), "encoding":"base64"}),
         )
         .await?;
-        entries.push(json!({"path":format!("{IMAGE_DIR}/{name}"),"mode":"100644","type":"blob","sha":git_sha(&blob["sha"])?}));
+        let sha = git_sha(&blob["sha"])?;
+        if retained {
+            entries.push(image_entry(name, Some(sha)));
+        } else {
+            archive_entries.push(image_entry(name, Some(sha)));
+            entries.push(image_entry(name, None));
+            archived.insert(name.as_str(), sha.to_owned());
+        }
+    }
+    // Images known only to local page history need a parent commit to keep their blobs reachable.
+    if !archive_entries.is_empty() {
+        (parent, base_tree) = publish_tree(
+            client,
+            token,
+            url,
+            &parent,
+            &base_tree,
+            archive_entries,
+            "Archive images used by Tenkivo page history",
+        )
+        .await?;
+    }
+    let mut document: Value =
+        serde_json::from_str(document).map_err(|_| "Invalid project document.")?;
+    visit_sources(&mut document, |source, _| {
+        if let Some(name) = source.strip_prefix(IMAGE_REF) {
+            if let Some(sha) = archived.get(name) {
+                *source = format!("{IMAGE_REF}{name}@{sha}");
+            }
+        }
+        Ok(())
+    })?;
+    let document = serde_json::to_string(&document).map_err(|error| error.to_string())?;
+    if document.len() > GITHUB_FILE_LIMIT {
+        return Err("GitHub cannot store a project document larger than 100 MiB.".into());
     }
     let blob = git_write(
         client.post(format!("{url}/git/blobs")).bearer_auth(token),
@@ -404,14 +550,14 @@ pub(super) async fn save_with_images(
     .await?;
     let project_sha = git_sha(&blob["sha"])?;
     entries.push(json!({"path":DOC,"mode":"100644","type":"blob","sha":project_sha}));
-    let tree = git_write(
-        client.post(format!("{url}/git/trees")).bearer_auth(token),
-        json!({"base_tree":base_tree,"tree":entries}),
-    )
-    .await?;
-    let commit = git_write(
-        client.post(format!("{url}/git/commits")).bearer_auth(token),
-        json!({"message":"Save Tenkivo project","tree":git_sha(&tree["sha"])?,"parents":[parent]}),
+    let (commit, _) = publish_tree(
+        client,
+        token,
+        url,
+        &parent,
+        &base_tree,
+        entries,
+        "Save Tenkivo project",
     )
     .await?;
     let mut reference = Url::parse(&format!("{url}/git/refs/heads")).map_err(|e| e.to_string())?;
@@ -420,7 +566,7 @@ pub(super) async fn save_with_images(
         .map_err(|_| "Invalid branch URL.")?
         .extend(branch.split('/'));
     git_write(client.patch(reference).bearer_auth(token),
-        json!({"sha":git_sha(&commit["sha"])?,"force":false})).await
+        json!({"sha":commit,"force":false})).await
         .map_err(|error| format!("{error} If someone saved first, use Save as Local to keep your changes before reloading."))?;
-    Ok(project_sha.to_owned())
+    Ok(Some(project_sha.to_owned()))
 }
