@@ -11,12 +11,14 @@ pub mod access;
 const API: &str = "https://api.github.com";
 const DOC: &str = "project.tkv";
 const MAX_DOCUMENT: usize = 1024 * 1024;
+const TENKIVO_GITHUB_CLIENT_ID: &str = "Iv23liFFdqx1jchyfonO";
 
 #[tauri::command]
 pub fn github_client_id() -> Option<&'static str> {
     option_env!("TENKIVO_GITHUB_CLIENT_ID")
         .map(str::trim)
         .filter(|id| !id.is_empty())
+        .or(Some(TENKIVO_GITHUB_CLIENT_ID))
 }
 
 #[derive(Default)]
