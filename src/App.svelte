@@ -1793,6 +1793,7 @@
         {/if}
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export…</button>
+        <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
       </div></details>
       {#if onlineProject}
