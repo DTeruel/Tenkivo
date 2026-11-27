@@ -1783,6 +1783,12 @@
         {#if onlineProject}
           <button disabled={busy} onclick={()=>{fileMenu.open=false;void saveAsLocal();}}>Save as Local…</button>
           <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;refreshOnlineProject();}}>Refresh from GitHub</button>
+          <button onclick={()=>{
+            fileMenu.open=false;
+            const repo=onlineProject?.repo;
+            if(repo)void invoke('open_web',{url:'https://github.com/'+repo.split('/').map(encodeURIComponent).join('/')})
+              .catch(error=>{status='Could not open the GitHub repository. '+String(error);});
+          }}>View on GitHub</button>
         {:else if isTauri()}
           <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('save');}}>Save as Online…</button>
         {/if}
