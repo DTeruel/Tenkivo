@@ -6,6 +6,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::State;
 
+pub mod access;
+
 const API: &str = "https://api.github.com";
 const DOC: &str = "project.tkv";
 const MAX_DOCUMENT: usize = 1024 * 1024;
@@ -25,6 +27,7 @@ struct Session {
     generation: u64,
     pending: Option<Device>,
     token: Option<String>,
+    account_id: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -218,6 +221,7 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
             return Err("Sign-in was cancelled.".into());
         }
         session.token = Some(token.to_owned());
+        session.account_id = Some(account.id);
         session.pending = None;
         return Ok(Poll::SignedIn { account });
     }
@@ -282,14 +286,18 @@ fn repository_url(repo: &str) -> Result<String, String> {
 
 #[derive(Deserialize)]
 struct Repository {
+    full_name: String,
     private: bool,
     default_branch: String,
     permissions: Option<Permissions>,
+    owner: Account,
 }
 
 #[derive(Deserialize)]
 struct Permissions {
     push: bool,
+    #[serde(default)]
+    admin: bool,
 }
 
 async fn repository(client: &Client, token: &str, url: &str) -> Result<Repository, String> {
