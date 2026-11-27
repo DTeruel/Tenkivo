@@ -91,6 +91,80 @@
   let board = $derived(project.pages.find(p=>p.id===current)!);
   let ids=$state<string[]>([]);
   let canvasClipboard=$state.raw<CanvasClipboard>();
+  let pageClipboard=$state.raw<{page:Page; selection:CanvasClipboard}>();
+  let clipboardSource:{generation:number;path:string;repo?:string;departments:{id:string;name:string}[]};
+  let projectGeneration=0;
+  function rememberClipboardSource(){
+    clipboardSource={generation:projectGeneration,path,repo:onlineProject?.repo,
+      departments:catalog.map(({id,name})=>({id,name}))};
+  }
+  function copyPage(p:Page,event?:ClipboardEvent){
+    const selection=collectSelection(p,p.items.map(item=>item.id),false)??{
+      token:'Tenkivo page '+crypto.randomUUID(),pageId:p.id,roots:[],items:[],connections:[],cut:false,pastes:0
+    };
+    pageClipboard=$state.snapshot({page:{...p,departments:pageTags.get(p.id)??[]},selection});
+    canvasClipboard=undefined;
+    rememberClipboardSource();
+    if(event){event.clipboardData?.setData('text/plain',selection.token);event.preventDefault();}
+    else void navigator.clipboard?.writeText(selection.token).catch(()=>{});
+    menu=undefined;status='Copied page: '+p.name;
+  }
+  async function transferClipboardItems(items:Item[],source:typeof clipboardSource){
+    if(source.generation===projectGeneration)return;
+    for(const item of items){
+      const attachment=item.attachment;
+      if(!attachment)continue;
+      if(!onlineProject && !attachment.local)continue;
+      if(onlineProject && attachment.shared?.blob && source.repo?.toLowerCase()===onlineProject.repo.toLowerCase())continue;
+      const file=attachment.shared
+        ? await invoke<string>('online_attachment_path',{repo:source.repo,attachment})
+        : await invoke<string>('clipboard_attachment_path',{project:source.path,attachment});
+      if(onlineProject){
+        const repo=onlineProject.repo;
+        const size=await invoke<number>('online_attachment_size',{path:file});
+        if(size>5*1024*1024 && !await confirm('This attachment is larger than 5 MiB. Copy it to the online project?'))throw Error('Paste canceled.');
+        item.attachment=await invoke<Attachment>('stage_online_attachment',{repo,path:file});
+      }else{
+        const [imported]=await invoke<{attachment:Attachment}[]>('import_attachments',{project:path,paths:[file],local:!!path});
+        item.attachment=imported.attachment;
+      }
+    }
+  }
+  function clipboardTags(tags:string[],source:typeof clipboardSource){
+    return tags.flatMap(id=>{
+      const name=source.departments.find(d=>d.id===id)?.name;
+      const match=catalog.find(d=>name && d.name.toLowerCase()===name.toLowerCase());
+      return match?[match.id]:[];
+    });
+  }
+  function adaptClipboardItems(items:Item[],source:typeof clipboardSource,destination:Page){
+    if(source.generation===projectGeneration)return;
+    const pages=[...project.pages,destination];
+    const valid=(to:{pageId:string;itemId?:string})=>pages.some(p=>p.id===to.pageId && (!to.itemId || p.items.some(item=>item.id===to.itemId)));
+    for(const item of items){
+      item.departments=clipboardTags(item.departments??[item.department],source);
+      if(item.link && !valid(item.link))delete item.link;
+      item.textLinks=item.textLinks?.filter(link=>valid(link.to));
+      if(item.target && !valid({pageId:item.target}))delete item.target;
+    }
+  }
+  async function pastePage(){
+    if(!editing || busy || !pageClipboard)return;
+    const {page:original,selection}=pageClipboard;
+    const source=clipboardSource;
+    const newPage:Page={id:crypto.randomUUID(),name:original.name,items:[],
+      departments:source.generation===projectGeneration?original.departments:clipboardTags(original.departments??[],source)};
+    const pasted=preparePaste(selection,newPage,false,0,0,true);
+    newPage.items=pasted.items;newPage.connections=pasted.connections;
+    busy=true;menu=undefined;
+    try{
+      await transferClipboardItems(newPage.items,source);
+      adaptClipboardItems(newPage.items,source,newPage);
+      commit();project.pages.push(newPage);change();await navigate(newPage);
+      status='Pasted page: '+newPage.name;
+    }catch(error){status='Could not paste page: '+String(error);recordError('Paste page',error);}
+    finally{busy=false;}
+  }
   let picked=$derived(board.items.filter(o=>ids.includes(o.id)));
   let active=$derived(picked.length===1?picked[0]:undefined);
   let liveBox=$state<Box>();
@@ -131,7 +205,7 @@
   }
   function setLimit(n:number){historyLimit=normalizeLimit(n);localStorage.setItem('navigation-limit',String(historyLimit));trimHistory();}
   function view(){return {page:current,x:tx,y:ty,zoom,ids:[...ids]};}
-  function resetViews(){wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;canvasClipboard=undefined;}
+  function resetViews(){wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
   function rememberView(){if(cursor>=0)history[cursor]=view();}
   function travel(step:number){
     if(historyMenu)historyMenu.open=false;
@@ -155,10 +229,16 @@
   }
   function copyObjects(cut:boolean,event?:ClipboardEvent){
     if(event && (canvasClipboardBlocked(event.target) || window.getSelection()?.isCollapsed===false))return;
+    if(event && !cut && focusArea==='tree' && event.target instanceof Element){
+      const id=event.target.closest<HTMLElement>('[data-page]')?.dataset.page;
+      const p=project.pages.find(p=>p.id===id);
+      if(p){copyPage(p,event);return;}
+    }
     if(cut && !editing){if(ids.length)status=readHint;return;}
     const selection=collectSelection(board,ids,cut);
     if(!selection)return;
     canvasClipboard=$state.snapshot(selection);
+    pageClipboard=undefined;rememberClipboardSource();
     if(event){
       event.clipboardData?.setData('text/plain',selection.token);
       event.preventDefault();
@@ -172,17 +252,19 @@
     menu=undefined;
     status=(cut?'Cut ':'Copied ')+selection.items.length+(selection.items.length===1?' object':' objects');
   }
-  function pasteObjects(point?:{x:number;y:number}){
+  async function pasteObjects(point?:{x:number;y:number}){
     const clipboard=canvasClipboard;
-    if(!clipboard)return;
+    if(!clipboard || busy)return;
+    const sourceProject=clipboardSource;
+    const sameProject=sourceProject.generation===projectGeneration;
     if(!editing){status=readHint;return;}
     const movedIds=new Set(clipboard.items.map(o=>o.id));
     const pages=[...project.pages,...project.trash??[]];
-    const move=clipboard.cut && !clipboard.pastes && !pages.some(p=>p.items.some(o=>movedIds.has(o.id)));
+    const move=sameProject && clipboard.cut && !clipboard.pastes && !pages.some(p=>p.items.some(o=>movedIds.has(o.id)));
     const source=enclosure(clipboard.items);
     const center={x:(width/2-tx)/zoom,y:(height/2-ty)/zoom};
     const offset=(move?0:clipboard.pastes+1)*24/zoom;
-    const samePage=clipboard.pageId===current;
+    const samePage=sameProject && clipboard.pageId===current;
     const sourceVisible=source.x*zoom+tx<width && source.y*zoom+ty<height &&
       (source.x+source.w)*zoom+tx>0 && (source.y+source.h)*zoom+ty>0;
     const origin=point ?? (samePage && sourceVisible
@@ -190,6 +272,15 @@
       : {x:center.x-source.w/2+offset,y:center.y-source.h/2+offset});
     const pasted=preparePaste(clipboard,board,move,origin.x-source.x,origin.y-source.y);
 
+    const destinationId=current;
+    if(!sameProject){
+      busy=true;
+      try{await transferClipboardItems(pasted.items,sourceProject);}
+      catch(error){status='Could not paste objects: '+String(error);recordError('Paste objects',error);return;}
+      finally{busy=false;}
+      if(destinationId!==current || !editing)return;
+      adaptClipboardItems(pasted.items,sourceProject,{...board,items:[...board.items,...pasted.items]});
+    }
     commit();typingField=null;
     if(move && !samePage){
       for(const p of pages)for(const o of p.items)remapLinks(o,to=>
@@ -410,7 +501,7 @@
     }
     finally{onlineWorking=false;busy=false;}
   }
-  async function saveAsLocal(){
+  async function saveAsLocal(copyOnly=false){
     if(busy || !onlineProject)return;
     const repo=onlineProject.repo;
     const wasEditing=editing;
@@ -419,6 +510,11 @@
       const destination=await save({defaultPath:project.name+'.tkv',filters:fileFilters});
       if(destination){
         const snapshot=snapshotForSave();
+        if(copyOnly){
+          await invoke('save_online_project_locally',{repo,path:destination,document:snapshot.raw});
+          status='Local recovery copy saved';
+          return;
+        }
         if(projectAttachments(project).some(attachment=>attachment.shared)){
           editing=false;
           const document=await invoke<string>('save_online_project_locally',{repo,path:destination,document:snapshot.raw});
@@ -584,7 +680,9 @@
   function paste(e:ClipboardEvent){
     if(canvasClipboardBlocked(e.target))return;
     const text=e.clipboardData?.getData('text/plain')??'';
-    if(canvasClipboard && (!text || text===canvasClipboard.token)){
+    if(pageClipboard && (!text || text===pageClipboard.selection.token)){
+      e.preventDefault();void pastePage();
+    }else if(canvasClipboard && (!text || text===canvasClipboard.token)){
       e.preventDefault();
       pasteObjects();
     }else if(insertUrl(text))e.preventDefault();
@@ -1304,7 +1402,11 @@
       else{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([raw]));a.href=url;a.download=project.name+'.tkv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
       acceptSaved(snapshot);
       status=remote?'Project saved to GitHub':'Project saved';
-    }catch(e){recordError('Project file',e);status=String(e);if(welcome)welcomeError=status;}finally{busy=false;}
+    }catch(e){
+      recordError('Project file',e);status=String(e);
+      if(onlineProject && status.startsWith('Online save conflict:'))ask('Online save conflict');
+      if(welcome)welcomeError=status;
+    }finally{busy=false;}
   }
   let exporter:ExportDialog;
   async function ensureExportSaved(){
@@ -1706,13 +1808,15 @@
         {#if target.parentId}<label><input type="checkbox" checked={target.departments===undefined} onchange={e=>{target.departments=e.currentTarget.checked?undefined:[...pageTags.get(target.id)??[]];change();}}/> Inherit from parent</label>{/if}
         {#each catalog as d}<label><input type="checkbox" checked={pageTags.get(target.id)?.includes(d.id)??false} onchange={e=>togglePageTag(target,d.id,e.currentTarget.checked)}/><i class="department-dot" style:background={d.color}></i>{d.name}</label>{/each}
         </fieldset></details>
+        <button onclick={()=>copyPage(target)}>Copy page</button>
+        <button disabled={!editing || !pageClipboard} onclick={()=>void pastePage()}>Paste page</button>
         <button onclick={()=>showPageHistory(target)}>View page history…</button>
         <button onclick={()=>{exporter.show(target);menu=undefined;}}>Export page as PDF…</button>
         <hr/>
         <button disabled={!editing} onclick={()=>requestDelete(target)}>Delete page…</button>
       {:else if menu.canvas}
         {#if !menu.fromAdd}
-          <button disabled={!editing || !canvasClipboard} onclick={()=>pasteObjects(menu?.point)}>Paste</button>
+          <button disabled={!editing || (!canvasClipboard && !pageClipboard)} onclick={()=>pageClipboard?void pastePage():void pasteObjects(menu?.point)}>Paste</button>
           <hr/>
         {/if}
         <div class="menu-heading">New</div>
@@ -1723,7 +1827,7 @@
       {:else}
         <button disabled={!picked.length} onclick={()=>copyObjects(false)}>Copy</button>
         <button disabled={!editing || !picked.length} onclick={()=>copyObjects(true)}>Cut</button>
-        <button disabled={!editing || !canvasClipboard} onclick={()=>pasteObjects()}>Paste</button>
+        <button disabled={!editing || (!canvasClipboard && !pageClipboard)} onclick={()=>pageClipboard?void pastePage():void pasteObjects()}>Paste</button>
         <hr/>
         <button onclick={()=>{fit();menu=undefined;}}>Focus selection</button>
         {@render departmentPicker()}
@@ -1854,6 +1958,11 @@
         <button onclick={signOut}>Cancel sign-in</button>
       </div>
     {/if}
+  {:else if dialogType==='Online save conflict'}
+    <p>Someone saved a newer version on GitHub. Your changes are still open. Save a local recovery copy before reloading, or discard them to open the latest version.</p>
+    <button autofocus onclick={()=>{dialog.close();void saveAsLocal(true);}}>Save a Local Copy…</button>
+    <button onclick={()=>{dialog.close();void accessOnline('reload');}}>Discard Changes and Reload…</button>
+    <button onclick={()=>dialog.close()}>Keep Editing</button>
   {:else if dialogType==='GitHub users' && onlineProject}
     <GitHubProjectUsers repo={onlineProject.repo} onback={()=>{dialogType='Project settings';}}/>
   {:else if dialogType==='Project settings' || dialogType==='New project'}
@@ -1951,7 +2060,7 @@
   {:else if dialogType==='Empty trash'}<p>Remove {project.trash?.length} {project.trash?.length===1?'page':'pages'} from this project’s trash?</p>
     <button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
-  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
+  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy focused page or canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste page, canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
   <input hidden bind:this={fileInput} type="file" accept=".tkv,.gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>

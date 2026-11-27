@@ -44,7 +44,7 @@ export function remapLinks(item:Item, map:(to:Destination)=>Destination) {
   for(const link of item.textLinks??[])link.to=map(link.to);
 }
 
-export function preparePaste(clipboard:CanvasClipboard, page:Page, move:boolean, dx:number, dy:number) {
+export function preparePaste(clipboard:CanvasClipboard, page:Page, move:boolean, dx:number, dy:number, copyPage=false) {
   const ids=new Map(clipboard.items.map(item=>[item.id,move?item.id:crypto.randomUUID()]));
   const items=structuredClone(clipboard.items).map(item=>{
     const id=ids.get(item.id)!;
@@ -52,9 +52,11 @@ export function preparePaste(clipboard:CanvasClipboard, page:Page, move:boolean,
     item.id=id;
     item.x+=dx;
     item.y+=dy;
+    if(copyPage && item.target===clipboard.pageId)item.target=page.id;
     remapLinks(item,to=>{
       const target=to.pageId===clipboard.pageId && to.itemId ? ids.get(to.itemId) : undefined;
-      return target ? {pageId:page.id,itemId:target} : to;
+      if(target)return {pageId:page.id,itemId:target};
+      return copyPage && to.pageId===clipboard.pageId && !to.itemId ? {pageId:page.id} : to;
     });
     return item;
   });

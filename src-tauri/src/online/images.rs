@@ -482,7 +482,7 @@ pub(super) async fn save_with_assets(
         .find(|entry| entry.path == DOC && entry.kind == "blob")
         .map(|entry| entry.sha.as_str());
     if actual != expected || (expected.is_none() && root.iter().any(|entry| entry.path == DOC)) {
-        return Err("GitHub already has a different project revision. Save as Local to keep your edits, then open or reload the online project.".into());
+        return Err("Online save conflict: GitHub already has a different project revision. Save as Local to keep your edits, then open or reload the online project.".into());
     }
 
     let mut stored = BTreeMap::new();
@@ -657,6 +657,14 @@ pub(super) async fn save_with_assets(
         .extend(branch.split('/'));
     git_write(client.patch(reference).bearer_auth(token),
         json!({"sha":commit,"force":false})).await
-        .map_err(|error| format!("{error} If someone saved first, use Save as Local to keep your changes before reloading."))?;
+        .map_err(|error| {
+            if error.starts_with("GitHub rejected the save (HTTP 409)")
+                || error.to_ascii_lowercase().contains("not a fast forward")
+            {
+                format!("Online save conflict: {error}")
+            } else {
+                error
+            }
+        })?;
     Ok(Some(project_sha.to_owned()))
 }

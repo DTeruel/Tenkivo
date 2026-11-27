@@ -243,6 +243,11 @@ pub(super) fn resolve(project: &str, a: &Attachment) -> Result<PathBuf, String> 
     }
 }
 #[tauri::command]
+pub fn clipboard_attachment_path(project: String, attachment: Attachment) -> Result<PathBuf, String> {
+    resolve(&project, &attachment)
+}
+
+#[tauri::command]
 pub async fn attachment_image(project: String, attachment: Attachment) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let p = resolve(&project, &attachment)?;

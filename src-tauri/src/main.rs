@@ -193,6 +193,7 @@ fn main() {
             export::export_pdf,
             export::open_pdf_location,
             attachments::import_attachments,
+            attachments::clipboard_attachment_path,
             attachments::attachment_image,
             attachments::read_embedded_image,
             attachments::attachment_media,
