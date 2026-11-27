@@ -9,6 +9,7 @@
   import MediaPlayer from './MediaPlayer.svelte';
   import {materializeAttachment} from './sharedAttachment';
   import {getCurrentWebview} from '@tauri-apps/api/webview';
+  import {getCurrentWindow} from '@tauri-apps/api/window';
   import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
   import {invoke,diagnostics,recordActivity,recordError,collectNativeDiagnostics} from './diagnostics.svelte';
@@ -1417,6 +1418,23 @@
       if(welcome)welcomeError=status;
     }finally{busy=false;}
   }
+  let exitDialog:HTMLDialogElement;
+  let closingWindow=false;
+  async function exitApp(saveChanges:boolean){
+    if(busy || closingWindow)return;
+    closingWindow=true;
+    exitDialog.close();
+    try{
+      if(saveChanges){
+        await saveFile();
+        if(dirty)return;
+      }
+      await getCurrentWindow().destroy();
+    }catch(error){
+      status='Could not close Tenkivo: '+String(error);
+      recordError('Close Tenkivo',error);
+    }finally{closingWindow=false;}
+  }
   let exporter:ExportDialog;
   async function ensureExportSaved(){
     if(onlineProject){status='Use File → Save as Local before creating a project archive.';return false;}
@@ -1528,8 +1546,18 @@
     const before=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue='';}};
     const refresh=()=>{if(welcome)void checkRecent();};
     window.addEventListener('focus',refresh);
-    window.addEventListener('beforeunload',before);
-    return ()=>{window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);clearInterval(diagnosticsTimer);void listener?.then(stop=>stop?.()).catch(error=>recordError('Drag and drop listener',error));window.removeEventListener('beforeunload',before);};
+    const closeListener=isTauri()?getCurrentWindow().onCloseRequested(event=>{
+      event.preventDefault();
+      if(closingWindow || exitDialog.open)return;
+      if(busy){status='Wait for the current operation to finish before closing Tenkivo.';return;}
+      if(dirty)exitDialog.showModal();
+      else void exitApp(false);
+    }).catch(error=>{recordError('Window close listener',error);return undefined;}):undefined;
+    if(!isTauri())window.addEventListener('beforeunload',before);
+    return ()=>{
+      window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);clearInterval(diagnosticsTimer);void listener?.then(stop=>stop?.()).catch(error=>recordError('Drag and drop listener',error));window.removeEventListener('beforeunload',before);
+      void closeListener?.then(stop=>stop?.()).catch(error=>recordError('Window close listener',error));
+    };
   });
 </script>
 
@@ -1920,6 +1948,15 @@
     {#if importError}<p role="alert">{importError}</p>{/if}
     <button disabled={copying} onclick={()=>fileDialog.close()}>Cancel</button>
     <button disabled={copying} onclick={()=>attach(false)}>Link original</button><button disabled={copying} onclick={()=>attach(true)}>{copying?'Adding…':'Copy to project'}</button>
+  </dialog>
+  <dialog bind:this={exitDialog} aria-labelledby="exit-dialog-title">
+    <h2 id="exit-dialog-title">Save changes before closing?</h2>
+    <p>Save your changes to “{project.name}” before closing Tenkivo, or discard them.</p>
+    <div class="row">
+      <button onclick={()=>exitDialog.close()}>Cancel</button>
+      <button onclick={()=>void exitApp(false)}>Don’t Save</button>
+      <button onclick={()=>void exitApp(true)}>Save and Close</button>
+    </div>
   </dialog>
   <dialog class="settings" bind:this={settings}>
     {@render closePanel(()=>settings.close())}<h2>Settings</h2>
