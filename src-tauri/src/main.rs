@@ -163,6 +163,8 @@ fn main() {
             online::online_sign_out,
             online::online_open,
             online::online_save,
+            online::open_project_cache,
+            online::clear_project_cache,
             online::access::online_discover,
             online::access::online_stop_discovery,
             online::access::online_project_access,

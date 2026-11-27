@@ -10,11 +10,12 @@ use std::{
 use tauri::State;
 
 pub mod access;
+mod images;
 mod session_store;
 
 const API: &str = "https://api.github.com";
 const DOC: &str = "project.tkv";
-pub(super) const MAX_DOCUMENT: usize = 1024 * 1024;
+pub(super) const GITHUB_FILE_LIMIT: usize = 100 * 1024 * 1024;
 const TENKIVO_GITHUB_CLIENT_ID: &str = "Iv23liFFdqx1jchyfonO";
 
 #[tauri::command]
@@ -470,6 +471,7 @@ pub async fn online_open(
     let response = client
         .get(format!("{url}/contents/{DOC}"))
         .query(&[("ref", &branch)])
+        .header("Accept", "application/vnd.github.object+json")
         .bearer_auth(&token)
         .send()
         .await
@@ -480,28 +482,38 @@ pub async fn online_open(
         );
     }
     let content: Value = checked(response)?.json().await.map_err(connection_error)?;
-    let encoded = content["content"]
-        .as_str()
-        .ok_or("The online project is not a readable file.")?;
-    if content["type"] != "file"
-        || content["encoding"] != "base64"
-        || encoded.len() > 2 * MAX_DOCUMENT
-    {
-        return Err("The online file is not a supported project or exceeds 1 MiB.".into());
+    if content["type"] != "file" {
+        return Err("The online project is not a readable file.".into());
     }
-    let decoded = STANDARD
-        .decode(encoded.split_whitespace().collect::<String>())
-        .map_err(|_| "GitHub returned an invalid project file.")?;
-    if decoded.len() > MAX_DOCUMENT {
-        return Err("The online project exceeds 1 MiB.".into());
-    }
-    Ok(RemoteProject {
-        document: String::from_utf8(decoded)
-            .map_err(|_| "The online project is not valid UTF-8.")?,
-        sha: content["sha"]
+    let sha = images::git_sha(&content["sha"])?;
+    let decoded = if content["encoding"] == "base64" {
+        let encoded = content["content"]
             .as_str()
-            .ok_or("GitHub did not return the file revision.")?
-            .into(),
+            .ok_or("GitHub did not return project contents.")?;
+        STANDARD
+            .decode(encoded.split_whitespace().collect::<String>())
+            .map_err(|_| "GitHub returned an invalid project file.")?
+    } else {
+        images::raw_file(
+            client
+                .get(format!("{url}/git/blobs/{sha}"))
+                .bearer_auth(&token),
+        )
+        .await?
+    };
+    let document = images::hydrate(
+        &state.1,
+        &details.full_name,
+        &client,
+        &token,
+        &url,
+        &branch,
+        &decoded,
+    )
+    .await?;
+    Ok(RemoteProject {
+        document,
+        sha: sha.into(),
         branch,
         writable: details.permissions.is_some_and(|p| p.push),
     })
@@ -521,12 +533,6 @@ pub async fn online_save(
     sha: Option<String>,
     document: String,
 ) -> Result<SavedProject, String> {
-    if document.len() > MAX_DOCUMENT {
-        return Err(format!(
-            "This project is {} KiB. Online projects are limited to 1024 KiB.",
-            document.len().div_ceil(1024)
-        ));
-    }
     let token = token(&state).await?;
     let client = client()?;
     let url = repository_url(&repo)?;
@@ -536,6 +542,27 @@ pub async fn online_save(
     }
     let use_default_branch = branch.is_none();
     let branch = branch.unwrap_or(details.default_branch);
+    let (document, assets) = images::separate(&document)?;
+    if document.len() > GITHUB_FILE_LIMIT {
+        return Err("GitHub cannot store a project document larger than 100 MiB. This limit applies to the document file only; images are stored separately.".into());
+    }
+    if !assets.is_empty() {
+        let project_sha = images::save_with_images(
+            &client,
+            &token,
+            &url,
+            &branch,
+            sha.as_deref(),
+            &document,
+            &assets,
+        )
+        .await?;
+        images::cache_saved(&state.1, &details.full_name, &assets);
+        return Ok(SavedProject {
+            sha: project_sha,
+            branch,
+        });
+    }
     let mut body = json!({"message":"Save Tenkivo project","content":STANDARD.encode(document)});
     if !use_default_branch {
         body["branch"] = json!(branch);
@@ -546,6 +573,7 @@ pub async fn online_save(
     let response = client
         .put(format!("{url}/contents/{DOC}"))
         .bearer_auth(&token)
+        .timeout(Duration::from_secs(120))
         .json(&body)
         .send()
         .await
@@ -581,4 +609,18 @@ pub async fn online_save(
             .into(),
         branch,
     })
+}
+
+#[tauri::command]
+pub fn open_project_cache(state: State<'_, Online>, repo: String) -> Result<(), String> {
+    let folder = images::cache_dir(&state.1, &repo)?;
+    crate::attachments::system_open(&folder)
+}
+
+#[tauri::command]
+pub async fn clear_project_cache(state: State<'_, Online>, repo: String) -> Result<u64, String> {
+    let data_dir = state.1.clone();
+    tauri::async_runtime::spawn_blocking(move || images::clear_cache(&data_dir, &repo))
+        .await
+        .map_err(|e| e.to_string())?
 }

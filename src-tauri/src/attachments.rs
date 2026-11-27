@@ -259,12 +259,12 @@ pub async fn read_embedded_image(path: String) -> Result<String, String> {
             return Err("Choose a local image file.".into());
         }
         let kind = mime(path).ok_or("Choose a PNG, JPEG, GIF or WebP image.")?;
-        let max = crate::online::MAX_DOCUMENT / 4 * 3;
+        let max = crate::online::GITHUB_FILE_LIMIT;
         let mut bytes = Vec::new();
         fs::File::open(path).map_err(|e| e.to_string())?.take((max + 1) as u64)
             .read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         if bytes.len() > max {
-            return Err("This image is too large for an online project.".into());
+            return Err("This image exceeds GitHub's 100 MiB file limit.".into());
         }
         Ok(format!("data:{kind};base64,{}", STANDARD.encode(bytes)))
     }).await.map_err(|error| error.to_string())?

@@ -117,6 +117,9 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .project-form fieldset {margin-bottom:16px}
 .settings-footer {display:flex;align-items:center;gap:8px}
 .settings-footer .settings-back {margin-left:auto}
+.project-cache {padding:12px 0;border-top:1px solid var(--line)}
+.project-cache h3 {margin:0}
+.project-cache .row {justify-content:flex-start;flex-wrap:wrap}
 .manual-online-open {margin-top:16px}
 .manual-online-open summary {cursor:pointer;color:var(--muted)}
 .manual-online-open form {margin-top:12px}

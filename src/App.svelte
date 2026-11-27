@@ -242,6 +242,7 @@
   let clientId=$state(localStorage.getItem('studio-github-client-id')??'');
   let configuredClientId=$state('');
   let onlineError=$state(''),deviceCode=$state(''),onlineWorking=$state(false);
+  let projectCacheBusy=$state(false),projectCacheStatus=$state(''),projectCacheError=$state('');
   let signInTimer:ReturnType<typeof setTimeout>|undefined, signInAttempt=0;
   const onlineIdentity=$derived(account?{id:'github:'+account.id,name:account.login,icon:'🐙'}:undefined);
 
@@ -412,6 +413,20 @@
     }catch(error){recordError('Save as local',error);status=String(error);}
     finally{busy=false;}
   }
+  async function manageProjectCache(action:'open'|'clear'){
+    const repo=onlineProject?.repo;
+    if(!repo || projectCacheBusy)return;
+    projectCacheBusy=true;projectCacheStatus='';projectCacheError='';
+    try{
+      if(action==='open'){
+        await invoke('open_project_cache',{repo});
+      }else if(await confirm('Clear downloaded images from this device? Tenkivo will download them again when needed.')){
+        const removed=await invoke<number>('clear_project_cache',{repo});
+        projectCacheStatus=removed===0?'The cache was already empty.':'Project cache cleared.';
+      }
+    }catch(error){projectCacheError=String(error);}
+    finally{projectCacheBusy=false;}
+  }
   let fileDialog:HTMLDialogElement, incoming=$state<string[]>([]), copying=$state(false), importError=$state(''), playing=$state('');
   let dropAt={x:0,y:0};
   function offerFiles(paths:string[],x:number,y:number){
@@ -581,6 +596,7 @@
     section='';
   }
   function projectOptions(){section='';
+    projectCacheStatus='';projectCacheError='';
     draftUsers=(project.users??[]).map(u=>({...u}));draftName=project.name;draftDescription=project.description??'';draftCatalog=catalog.map(d=>({...d}));ask('Project settings');
   }
   function applyOptions(close=true){
@@ -1109,6 +1125,14 @@
     for(const [i,f] of files.entries()) {
       try {
         const source=await f.read();
+        if(project!==owner || current!==sourcePage || !editing)return;
+        if(onlineProject){
+          const encodedLength=source.length-source.indexOf(',')-1;
+          const padding=source.endsWith('==')?2:source.endsWith('=')?1:0;
+          const bytes=Math.floor(encodedLength*3/4)-padding;
+          if(bytes>5*1024*1024 && !await confirm(f.name+' ('+(bytes/(1024*1024)).toFixed(1)+' MiB) will be shared at its original size. Add this image?'))continue;
+          if(project!==owner || current!==sourcePage || !editing)return;
+        }
         const img=new Image();img.src=source;await img.decode();
         if(project!==owner || current!==sourcePage || !editing)return;
         const w=Math.min(360,img.naturalWidth), h=w*img.naturalHeight/img.naturalWidth+32;
@@ -1763,6 +1787,18 @@
       <button class="add-project-entry" type="button" onclick={()=>openSection('Departments')}>Departments　›</button>
       {#if onlineProject}<button class="add-project-entry" type="button" disabled={!account} onclick={()=>{dialogType='GitHub users';}}>Users on GitHub　›</button>
       {:else}<button class="add-project-entry" type="button" onclick={()=>openSection('Users')}>Local profiles　›</button>{/if}
+      {#if !creating && onlineProject}
+        <section class="project-cache" aria-label="Project cache">
+          <h3>Project cache</h3>
+          <p>Downloaded images are kept on this device so the project opens faster.</p>
+          <div class="row">
+            <button type="button" disabled={projectCacheBusy} onclick={()=>manageProjectCache('open')}>Open cache folder</button>
+            <button type="button" disabled={projectCacheBusy} onclick={()=>manageProjectCache('clear')}>Clear cache…</button>
+          </div>
+          {#if projectCacheStatus}<p role="status">{projectCacheStatus}</p>{/if}
+          {#if projectCacheError}<p role="alert">{projectCacheError}</p>{/if}
+        </section>
+      {/if}
       {:else if section==='Departments'}<fieldset disabled={!creating && !editing}>
       {#each draftCatalog as d (d.id)}
         <div class="department-editor"><input type="color" aria-label={'Color for '+d.name} bind:value={d.color}/>
