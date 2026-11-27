@@ -68,8 +68,10 @@ pub async fn online_discover(
     state: State<'_, Online>,
     request_id: u64,
 ) -> Result<Vec<DiscoveredProject>, String> {
-    state.2.fetch_max(request_id, Ordering::Relaxed);
-    let cancelled = || state.2.load(Ordering::Relaxed) != request_id;
+    state
+        .discovery_request
+        .fetch_max(request_id, Ordering::Relaxed);
+    let cancelled = || state.discovery_request.load(Ordering::Relaxed) != request_id;
     if cancelled() {
         return Ok(Vec::new());
     }
@@ -131,7 +133,9 @@ pub async fn online_discover(
 
 #[tauri::command]
 pub fn online_stop_discovery(state: State<'_, Online>, request_id: u64) {
-    state.2.fetch_max(request_id, Ordering::Relaxed);
+    state
+        .discovery_request
+        .fetch_max(request_id, Ordering::Relaxed);
 }
 
 async fn admin_context(
@@ -139,7 +143,7 @@ async fn admin_context(
     repo: &str,
 ) -> Result<(Client, String, String, Repository, u64), String> {
     let account_id = {
-        let session = state.0.lock().unwrap();
+        let session = state.session.lock().unwrap();
         session
             .credentials
             .as_ref()

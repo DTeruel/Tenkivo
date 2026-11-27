@@ -153,7 +153,7 @@ fn child_dir(root: &Path, name: &str) -> Result<PathBuf, String> {
 
 fn stage_dir(state: &Online, repo: &str) -> Result<PathBuf, String> {
     repository_url(repo)?;
-    let mut staging = state.3.lock().unwrap();
+    let mut staging = state.staging.lock().unwrap();
     if staging.is_none() {
         *staging = Some(tempfile::tempdir().map_err(|e| e.to_string())?);
     }
@@ -236,7 +236,7 @@ async fn materialize(
     attachment: &Attachment,
 ) -> Result<PathBuf, String> {
     let shared = validate_attachment(attachment)?;
-    let cache = images::cache_dir(&state.1, repo)?;
+    let cache = images::cache_dir(&state.cache_root, repo)?;
     let folder = child_dir(&child_dir(&cache, "files")?, &shared.sha256)?;
     let destination = folder.join(&attachment.path);
     if checked_bytes(&destination, &shared.sha256).is_ok() {

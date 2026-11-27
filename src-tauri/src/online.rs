@@ -27,21 +27,24 @@ pub fn github_client_id() -> Option<&'static str> {
         .or(Some(TENKIVO_GITHUB_CLIENT_ID))
 }
 
-pub struct Online(
-    Mutex<Session>,
-    PathBuf,
-    AtomicU64,
-    Mutex<Option<tempfile::TempDir>>,
-);
+pub struct Online {
+    session: Mutex<Session>,
+    session_dir: PathBuf,
+    cache_root: PathBuf,
+    discovery_request: AtomicU64,
+    staging: Mutex<Option<tempfile::TempDir>>,
+}
 
 impl Online {
-    pub fn new(data_dir: PathBuf) -> Self {
-        Self(
-            Mutex::new(Session::default()),
-            data_dir,
-            AtomicU64::new(0),
-            Mutex::new(None),
-        )
+    pub fn new(session_dir: PathBuf, cache_root: PathBuf) -> Self {
+        images::migrate_cache(&session_dir.join("online-image-cache"), &cache_root);
+        Self {
+            session: Mutex::new(Session::default()),
+            session_dir,
+            cache_root,
+            discovery_request: AtomicU64::new(0),
+            staging: Mutex::new(None),
+        }
     }
 }
 
@@ -176,7 +179,7 @@ pub async fn online_sign_in(
         return Err("Copy the Client ID from your GitHub App settings. Your GitHub username cannot be used here.".into());
     }
     let generation = {
-        let mut session = state.0.lock().unwrap();
+        let mut session = state.session.lock().unwrap();
         session.generation += 1;
         session.pending = None;
         session.generation
@@ -212,7 +215,7 @@ pub async fn online_sign_in(
     })?;
     let now = Instant::now();
     let interval = device.interval.clamp(1, 120);
-    let mut session = state.0.lock().unwrap();
+    let mut session = state.session.lock().unwrap();
     if session.generation != generation {
         return Err("Sign-in was cancelled.".into());
     }
@@ -232,7 +235,7 @@ pub async fn online_sign_in(
 #[tauri::command]
 pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
     let (generation, device) = {
-        let mut session = state.0.lock().unwrap();
+        let mut session = state.session.lock().unwrap();
         let generation = session.generation;
         let device = session
             .pending
@@ -281,8 +284,8 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
         .await
         .map_err(connection_error)?;
         let credentials = grant.into_session(account.clone(), device.client_id);
-        let file = session_store::open(&state.1).await?;
-        let mut session = state.0.lock().unwrap();
+        let file = session_store::open(&state.session_dir).await?;
+        let mut session = state.session.lock().unwrap();
         if session.generation != generation {
             return Err("Sign-in was cancelled.".into());
         }
@@ -293,7 +296,7 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
         session.pending = None;
         return Ok(Poll::SignedIn { account });
     }
-    let mut session = state.0.lock().unwrap();
+    let mut session = state.session.lock().unwrap();
     if session.generation != generation {
         return Err("Sign-in was cancelled.".into());
     }
@@ -318,10 +321,10 @@ pub async fn online_poll(state: State<'_, Online>) -> Result<Poll, String> {
 
 #[tauri::command]
 pub async fn online_restore(state: State<'_, Online>) -> Result<Option<Account>, String> {
-    let Some(file) = session_store::open(&state.1).await? else {
+    let Some(file) = session_store::open(&state.session_dir).await? else {
         return Ok(None);
     };
-    let mut session = state.0.lock().unwrap();
+    let mut session = state.session.lock().unwrap();
     if session.pending.is_some() || session.credentials.is_some() {
         return Ok(session
             .credentials
@@ -337,8 +340,8 @@ pub async fn online_restore(state: State<'_, Online>) -> Result<Option<Account>,
 
 #[tauri::command]
 pub async fn online_sign_out(state: State<'_, Online>) -> Result<(), String> {
-    let file = session_store::open(&state.1).await?;
-    let mut session = state.0.lock().unwrap();
+    let file = session_store::open(&state.session_dir).await?;
+    let mut session = state.session.lock().unwrap();
     if let Some(file) = &file {
         file.clear()?;
     }
@@ -350,9 +353,9 @@ pub async fn online_sign_out(state: State<'_, Online>) -> Result<(), String> {
 }
 
 async fn token(state: &Online) -> Result<String, String> {
-    let file = session_store::open(&state.1).await?;
+    let file = session_store::open(&state.session_dir).await?;
     let (generation, mut credentials) = {
-        let session = state.0.lock().unwrap();
+        let session = state.session.lock().unwrap();
         (
             session.generation,
             session
@@ -401,7 +404,7 @@ async fn token(state: &Online) -> Result<String, String> {
             file.write(&credentials)?;
         }
     }
-    let mut session = state.0.lock().unwrap();
+    let mut session = state.session.lock().unwrap();
     if generation != session.generation {
         return Err("The GitHub session changed. Try again.".into());
     }
@@ -513,7 +516,7 @@ pub async fn online_open(
         .await?
     };
     let document = images::hydrate(
-        &state.1,
+        &state.cache_root,
         &details.full_name,
         &client,
         &token,
@@ -571,7 +574,7 @@ pub async fn online_save(
         )
         .await?;
         if let Some(project_sha) = project_sha {
-            images::cache_saved(&state.1, &details.full_name, &assets);
+            images::cache_saved(&state.cache_root, &details.full_name, &assets);
             return Ok(SavedProject {
                 sha: project_sha,
                 branch,
@@ -628,14 +631,14 @@ pub async fn online_save(
 
 #[tauri::command]
 pub fn open_project_cache(state: State<'_, Online>, repo: String) -> Result<(), String> {
-    let folder = images::cache_dir(&state.1, &repo)?;
+    let folder = images::cache_dir(&state.cache_root, &repo)?;
     crate::attachments::system_open(&folder)
 }
 
 #[tauri::command]
 pub async fn clear_project_cache(state: State<'_, Online>, repo: String) -> Result<u64, String> {
-    let data_dir = state.1.clone();
-    tauri::async_runtime::spawn_blocking(move || images::clear_cache(&data_dir, &repo))
+    let cache_root = state.cache_root.clone();
+    tauri::async_runtime::spawn_blocking(move || images::clear_cache(&cache_root, &repo))
         .await
         .map_err(|e| e.to_string())?
 }

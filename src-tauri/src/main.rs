@@ -117,7 +117,8 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             use tauri::Manager;
-            app.manage(online::Online::new(app.path().app_local_data_dir()?));
+            let cache_root = app.path().local_data_dir()?.join("Tenkivo").join("Cache").join("Projects");
+            app.manage(online::Online::new(app.path().app_local_data_dir()?, cache_root));
             #[cfg(windows)]
             {
                 use webview2_com::{

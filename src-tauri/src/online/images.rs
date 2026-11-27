@@ -178,11 +178,29 @@ pub(super) async fn raw_file(request: RequestBuilder) -> Result<Vec<u8>, String>
     Ok(bytes)
 }
 
-pub(super) fn cache_dir(data_dir: &Path, repo: &str) -> Result<PathBuf, String> {
+pub(super) fn migrate_cache(legacy_root: &Path, cache_root: &Path) {
+    if !legacy_root
+        .symlink_metadata()
+        .is_ok_and(|info| info.is_dir())
+        || cache_root.symlink_metadata().is_ok()
+    {
+        return;
+    }
+    if let Some(parent) = cache_root.parent() {
+        if let Err(error) =
+            fs::create_dir_all(parent).and_then(|_| fs::rename(legacy_root, cache_root))
+        {
+            eprintln!("Could not migrate the project cache: {error}");
+        }
+    }
+}
+
+pub(super) fn cache_dir(cache_root: &Path, repo: &str) -> Result<PathBuf, String> {
     repository_url(repo)?;
-    let root = data_dir.join("online-image-cache");
-    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
-    let root = root.canonicalize().map_err(|error| error.to_string())?;
+    fs::create_dir_all(cache_root).map_err(|error| error.to_string())?;
+    let root = cache_root
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
     let directory = root.join(digest(repo.to_ascii_lowercase().as_bytes()));
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     if directory
@@ -204,8 +222,8 @@ fn cache_file(folder: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(super) fn clear_cache(data_dir: &Path, repo: &str) -> Result<u64, String> {
-    let folder = cache_dir(data_dir, repo)?;
+pub(super) fn clear_cache(cache_root: &Path, repo: &str) -> Result<u64, String> {
+    let folder = cache_dir(cache_root, repo)?;
     let mut count = files::clear_file_cache(&folder)?;
     for file in fs::read_dir(folder).map_err(|error| error.to_string())? {
         let file = file.map_err(|error| error.to_string())?;
@@ -225,11 +243,11 @@ pub(super) fn clear_cache(data_dir: &Path, repo: &str) -> Result<u64, String> {
     Ok(count)
 }
 
-pub(super) fn cache_saved(data_dir: &Path, repo: &str, assets: &Assets) {
+pub(super) fn cache_saved(cache_root: &Path, repo: &str, assets: &Assets) {
     if assets.is_empty() {
         return;
     }
-    if let Ok(folder) = cache_dir(data_dir, repo) {
+    if let Ok(folder) = cache_dir(cache_root, repo) {
         for (name, bytes) in &assets.images {
             if !folder.join(name).is_file() {
                 let _ = cache_file(&folder, name, bytes);
@@ -239,7 +257,7 @@ pub(super) fn cache_saved(data_dir: &Path, repo: &str, assets: &Assets) {
 }
 
 pub(super) async fn hydrate(
-    data_dir: &Path,
+    cache_root: &Path,
     repo: &str,
     client: &Client,
     token: &str,
@@ -272,7 +290,7 @@ pub(super) async fn hydrate(
     let folder = if names.is_empty() {
         None
     } else {
-        cache_dir(data_dir, repo).ok()
+        cache_dir(cache_root, repo).ok()
     };
     let mut sources = BTreeMap::new();
     for (name, sha) in names {
