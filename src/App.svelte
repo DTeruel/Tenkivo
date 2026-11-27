@@ -82,7 +82,7 @@
   async function openRecent(location:string){
     if(launching || busy)return;
     launching=true;welcomeError='';
-    try{await load(await invoke<string>('open_project',{path:location}),location);}
+    try{if(await confirmUnsaved('open'))await load(await invoke<string>('open_project',{path:location}),location);}
     catch(error){welcomeError='Could not open '+location+' · '+String(error);await checkRecent();}
     finally{launching=false;}
   }
@@ -466,13 +466,13 @@
     if(!repo || (action==='save' && (welcome || onlineProject)))return;
     const newName=onlineNewName.trim();
     if(action==='create' && (!newName || invalidDraftTags()))return;
+    if(action!=='save' && !await confirmUnsaved(action))return;
     onlineWorking=true;busy=true;onlineError='';
     try{
       if(action==='create'){
-        if(!await discard())return;
         const document=JSON.stringify({version:1,name:newName,catalog:saveDraftTags(),pages:[page('Overview')] } satisfies Project);
         const saved=await invoke<{sha:string;branch:string}>('online_save',{repo,branch:null,sha:null,document});
-        await load(document,'',{repo,...saved,writable:true},true);
+        await load(document,'',{repo,...saved,writable:true});
         onlineNewName='';
         status='Online project created · '+repo;
         void discoverProjects();
@@ -487,7 +487,7 @@
         void discoverProjects();
       }else{
         const {document,...remote}=await invoke<Omit<OnlineProject,'repo'> & {document:string}>('online_open',{repo,branch:action==='reload'?onlineProject?.branch:null});
-        if(!await load(document,'',{repo,...remote}))return;
+        await load(document,'',{repo,...remote});
         status='Online project opened · '+repo;
       }
       onlineRepo=repo;
@@ -1346,9 +1346,41 @@
     creationError='';draftUsers=[];draftName='';draftDescription='';draftCatalog=[];selectedTagPreset='';ask('New project');
   }
   function ask(type:string){dialogType=type;name='';dialog.showModal();}
-  async function discard(){return !dirty || (isTauri()?await confirm('Discard unsaved changes?'):window.confirm('Discard unsaved changes?'));}
+  type UnsavedAction='exit'|'close'|'open'|'create'|'reload';
+  type UnsavedChoice='save'|'discard'|'cancel';
+  const unsavedLabels:Record<UnsavedAction,{action:string;save:string}> = {
+    exit:{action:'closing Tenkivo',save:'Save and Close'},
+    close:{action:'closing the project',save:'Save and Close'},
+    open:{action:'opening another project',save:'Save and Open'},
+    create:{action:'creating a new project',save:'Save and Continue'},
+    reload:{action:'reloading from GitHub',save:'Save and Reload'},
+  };
+  let unsavedDialog:HTMLDialogElement;
+  let unsavedAction=$state<UnsavedAction>('exit');
+  let resolveUnsaved:((choice:UnsavedChoice)=>void)|undefined;
+  function finishUnsaved(choice:UnsavedChoice){
+    const resolve=resolveUnsaved;
+    resolveUnsaved=undefined;
+    unsavedDialog.close();
+    resolve?.(choice);
+  }
+  async function confirmUnsaved(action:UnsavedAction){
+    if(busy || resolveUnsaved)return false;
+    if(!dirty)return true;
+    unsavedAction=action;
+    const choice=await new Promise<UnsavedChoice>(resolve=>{
+      resolveUnsaved=resolve;
+      unsavedDialog.showModal();
+    });
+    if(choice==='cancel')return false;
+    if(choice==='save'){
+      await saveFile();
+      return !dirty;
+    }
+    return true;
+  }
   async function closeProject(){
-    if(busy || !await discard())return;
+    if(!await confirmUnsaved('close'))return;
     openingEditPending=false;
     stopDrawing();welcome=true;welcomeError='';path='';onlineProject=undefined;status='';editing=false;
     project=initial;current=initial.pages[0].id;resetViews();resetEdits(true);
@@ -1360,9 +1392,9 @@
   async function named(){
     if(dialogType==='New project'){
       if(busy || !validUsers || !draftName.trim() || invalidDraftTags())return;
+      if(!await confirmUnsaved('create'))return;
       busy=true;creationError='';
       try{
-        if(!await discard())return;
         const p=page('Overview');
         const next:typeof initial={version:1,users:draftUsers.map(u=>({...u,name:u.name.trim()})),name:draftName.trim(),description:draftDescription.trim(),catalog:saveDraftTags(),pages:[p]};
         const location=isTauri()?await save({defaultPath:next.name+'.tkv',filters:fileFilters}):'';
@@ -1378,14 +1410,13 @@
     const p=page(name.trim());p.parentId=pageParent;project.pages.push(p);await navigate(p);
     change();dialog.close();
   }
-  async function load(raw:string,location:string,remote?:OnlineProject,discardConfirmed=false){
+  async function load(raw:string,location:string,remote?:OnlineProject){
     const data:unknown=JSON.parse(raw);
     if(data && typeof data==='object' && 'pages' in data && Array.isArray(data.pages)){
       migrateLegacyDiagrams(data as Project);
     }
     if(!validProject(data))throw Error('Unsupported or invalid project.');
     if(remote)checkOnlineAttachments(data);
-    if(!discardConfirmed && !await discard())return false;
     project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
     openingEditPending=projectOpeningMode==='edit';
     applyProjectOpeningMode();
@@ -1393,7 +1424,7 @@
   }
   async function openFile(){
     if(!isTauri()){fileInput.click();return;}
-    try{const f=await open({filters:[{name:'Tenkivo projects',extensions:['tkv','gdstudio']}]});if(f)await load(await invoke('open_project',{path:f}),f);}
+    try{const f=await open({filters:[{name:'Tenkivo projects',extensions:['tkv','gdstudio']}]});if(f && await confirmUnsaved('open'))await load(await invoke('open_project',{path:f}),f);}
     catch(e){recordError('Project file',e);status=String(e);if(welcome)welcomeError=status;}
   }
   async function saveFile(){
@@ -1418,17 +1449,12 @@
       if(welcome)welcomeError=status;
     }finally{busy=false;}
   }
-  let exitDialog:HTMLDialogElement;
   let closingWindow=false;
-  async function exitApp(saveChanges:boolean){
+  async function exitApp(){
     if(busy || closingWindow)return;
     closingWindow=true;
-    exitDialog.close();
     try{
-      if(saveChanges){
-        await saveFile();
-        if(dirty)return;
-      }
+      if(!await confirmUnsaved('exit'))return;
       await getCurrentWindow().destroy();
     }catch(error){
       status='Could not close Tenkivo: '+String(error);
@@ -1548,10 +1574,9 @@
     window.addEventListener('focus',refresh);
     const closeListener=isTauri()?getCurrentWindow().onCloseRequested(event=>{
       event.preventDefault();
-      if(closingWindow || exitDialog.open)return;
+      if(closingWindow || resolveUnsaved)return;
       if(busy){status='Wait for the current operation to finish before closing Tenkivo.';return;}
-      if(dirty)exitDialog.showModal();
-      else void exitApp(false);
+      void exitApp();
     }).catch(error=>{recordError('Window close listener',error);return undefined;}):undefined;
     if(!isTauri())window.addEventListener('beforeunload',before);
     return ()=>{
@@ -1949,13 +1974,13 @@
     <button disabled={copying} onclick={()=>fileDialog.close()}>Cancel</button>
     <button disabled={copying} onclick={()=>attach(false)}>Link original</button><button disabled={copying} onclick={()=>attach(true)}>{copying?'Adding…':'Copy to project'}</button>
   </dialog>
-  <dialog bind:this={exitDialog} aria-labelledby="exit-dialog-title">
-    <h2 id="exit-dialog-title">Save changes before closing?</h2>
-    <p>Save your changes to “{project.name}” before closing Tenkivo, or discard them.</p>
+  <dialog bind:this={unsavedDialog} aria-labelledby="unsaved-dialog-title" oncancel={event=>{event.preventDefault();finishUnsaved('cancel');}}>
+    <h2 id="unsaved-dialog-title">Save changes before {unsavedLabels[unsavedAction].action}?</h2>
+    <p>Save your changes to “{project.name}”, or discard them to continue.</p>
     <div class="row">
-      <button onclick={()=>exitDialog.close()}>Cancel</button>
-      <button onclick={()=>void exitApp(false)}>Don’t Save</button>
-      <button onclick={()=>void exitApp(true)}>Save and Close</button>
+      <button onclick={()=>finishUnsaved('cancel')}>Cancel</button>
+      <button onclick={()=>finishUnsaved('discard')}>Don’t Save</button>
+      <button onclick={()=>finishUnsaved('save')}>{unsavedLabels[unsavedAction].save}</button>
     </div>
   </dialog>
   <dialog class="settings" bind:this={settings}>
@@ -2151,6 +2176,6 @@
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button>
   {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy focused page or canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste page, canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
-  <input hidden bind:this={fileInput} type="file" accept=".tkv,.gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
+  <input hidden bind:this={fileInput} type="file" accept=".tkv,.gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{if(await confirmUnsaved('open'))await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>
 <ExportDialog bind:this={exporter} {project} {path} {filters} {pageTags} convert={convertExternal} ensureSaved={ensureExportSaved} notify={exportNotice}/>
