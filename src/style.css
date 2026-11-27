@@ -82,6 +82,12 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .canvas-label .section {margin:0}
 .canvas-label .read-caption,.canvas-label .enable-edit {font-size:12px}
 .canvas-label .enable-edit {padding:2px 4px}
+.canvas-label {flex-wrap:wrap}
+.editing-presence {border-inline-start:3px solid light-dark(#a72032,#f07786);padding-inline-start:8px;color:light-dark(#a72032,#ff94a2);font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.editing-presence:empty {position:absolute;padding:0;border:0}
+.page-editors {display:flex;align-items:center;gap:3px;margin-inline:4px;flex:none}
+.page-editor-avatar {position:relative;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;overflow:hidden;background:var(--paper);color:var(--ink);font-size:10px}
+.page-editor-avatar img {position:absolute;inset:0;border-radius:inherit}
 .canvas-add {position:absolute;z-index:6;left:10px;top:10px;width:32px;height:32px;padding:0;font-size:23px;background:var(--paper);border:1px solid var(--line);box-shadow:0 2px 6px #0002}
 .menu-heading {font-size:11px;color:var(--muted);padding:4px 9px}
 .app-menu .menu-export {border-top:1px solid var(--line);border-radius:0}

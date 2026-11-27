@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import {connectionPath,portPosition,portSides} from './connections';
   import {collectSelection,preparePaste,remapLinks,type CanvasClipboard} from './canvasClipboard';
   import DrawingStroke from './DrawingStroke.svelte';
@@ -14,6 +14,7 @@
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
   import {invoke,diagnostics,recordActivity,recordError,collectNativeDiagnostics} from './diagnostics.svelte';
   import GitHubProjectUsers from './GitHubProjectUsers.svelte';
+  import {PagePresence,type PageEditor} from './pagePresence.svelte';
   function showLogs(){
     if(!dialog.open)ask('Editor logs');
     if(dialogType==='Editor logs')diagnostics.unreadErrors=0;
@@ -324,6 +325,28 @@
   type OnlineProject={repo:string;branch:string;sha:string;writable:boolean};
   type DiscoveredProject=Pick<OnlineProject,'repo'|'writable'>;
   let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
+  const presence=new PagePresence();
+  let signingOut=$state(false);
+  const editorsByPage=$derived.by(()=>{
+    const pages=new Map<string,PageEditor[]>();
+    for(const editor of presence.editors){
+      const editors=pages.get(editor.page)??[];
+      editors.push(editor);
+      pages.set(editor.page,editors);
+    }
+    return pages;
+  });
+  $effect(()=>{
+    const repo=onlineProject?.repo, branch=onlineProject?.branch, accountId=account?.id;
+    const target=repo && branch && accountId && !signingOut
+      ? {repo,branch,accountId,page:editing && onlineProject?.writable?current:null}
+      : null;
+    untrack(()=>presence.setTarget(target));
+  });
+  function editingNotice(editors:PageEditor[]){
+    const names=editors.map(editor=>'@'+editor.login).join(', ');
+    return names+(editors.length===1?' is editing this page':' are editing this page');
+  }
   const canSaveProject=$derived(!busy && (!onlineProject || !!(account && onlineProject.writable)));
   let restoringAccount=$state(isTauri()),restoreAccountError=$state('');
   let restoreSkipped=$state(false), restoreAttempt=0;
@@ -427,7 +450,9 @@
     if(onlineWorking || busy)return;
     ++signInAttempt;clearTimeout(signInTimer);deviceCode='';onlineError='';
     onlineWorking=true;
+    signingOut=true;
     try{
+      await presence.leave();
       await invoke('online_sign_out');
       if(editing && editorId===onlineIdentity?.id){commit();typingField=null;toggleEdit();}
       account=undefined;
@@ -436,7 +461,7 @@
       discoveredProjects=[];discoveryPaused=false;discoveryError='';
       if(onlineProject)onlineProject={...onlineProject,writable:false};
     }catch(error){onlineError=String(error);}
-    finally{onlineWorking=false;}
+    finally{onlineWorking=false;signingOut=false;}
   }
   function projectAttachments(doc:Project){
     const pages=[...doc.pages,...doc.trash??[],...(doc.pageHistory??[]).map(version=>version.page)];
@@ -1455,6 +1480,7 @@
     closingWindow=true;
     try{
       if(!await confirmUnsaved('exit'))return;
+      await presence.leave();
       await getCurrentWindow().destroy();
     }catch(error){
       status='Could not close Tenkivo: '+String(error);
@@ -1534,6 +1560,7 @@
     if(e.key==='Escape'){inline='';ids=[];}
   }
   onMount(()=>{
+    const stopPresence=presence.start();
     let diagnosticsTimer:ReturnType<typeof setInterval>|undefined;
     let collectingDiagnostics=false;
     const collect=()=>{
@@ -1580,6 +1607,7 @@
     }).catch(error=>{recordError('Window close listener',error);return undefined;}):undefined;
     if(!isTauri())window.addEventListener('beforeunload',before);
     return ()=>{
+      stopPresence();
       window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);clearInterval(diagnosticsTimer);void listener?.then(stop=>stop?.()).catch(error=>recordError('Drag and drop listener',error));window.removeEventListener('beforeunload',before);
       void closeListener?.then(stop=>stop?.()).catch(error=>recordError('Window close listener',error));
     };
@@ -1776,6 +1804,18 @@
         ondragend={()=>{treeDrop='';draggingPage='';}} ondragover={e=>{if(editing && draggingPage){e.preventDefault();treeDrop=p.id+' '+placement(e);}}}
         ondrop={e=>movePage(e,p)} oncontextmenu={e=>{focusArea='tree';context(e,p);}} data-page={p.id} onfocus={()=>focusArea='tree'} onclick={()=>{if(suppressPageClick){suppressPageClick=false;return;}focusArea='tree';void navigate(p);}}><span>▧</span><span class="page-name">{p.name}</span></button>
       <span class="page-tags" title={(pageTags.get(p.id)??[]).map(d=>names[d]).join(', ')}>{#each pageTags.get(p.id)??[] as d}<i style:background={colors[d]}></i>{/each}</span>
+      {#if editorsByPage.get(p.id)?.length}
+        {@const editors=editorsByPage.get(p.id)!}
+        <span class="page-editors" title={editingNotice(editors)} role="img" aria-label={editingNotice(editors)}>
+          {#each editors.slice(0,3) as editor (editor.user_id)}
+            <span class="page-editor-avatar">
+              {editor.login.slice(0,1).toUpperCase()}
+              <img src={'https://avatars.githubusercontent.com/u/'+editor.user_id+'?s=40'} alt="" width="18" height="18" onerror={event=>{event.currentTarget.setAttribute('hidden','');}}/>
+            </span>
+          {/each}
+          {#if editors.length>3}<small>+{editors.length-3}</small>{/if}
+        </span>
+      {/if}
       <button class="page-child" disabled={!editing} title={'Add child page to '+p.name} aria-label={'Add child page to '+p.name} onclick={()=>newPage(p)}>+</button></div>
     {/each}
     {#if draggingPage}<button class="root-drop" ondragover={e=>e.preventDefault()} ondrop={e=>movePage(e)}>Move to project root</button>{/if}
@@ -1787,7 +1827,11 @@
       {/if}
     </details>
   </DockPanel>
-  <main><div class="boardhead"><div><div class="canvas-label"><span class="section">Canvas</span>{#if !editing}<span class="read-caption">Editing is locked</span><button class="enable-edit" onclick={toggleEdit}>Enable editing <kbd>E</kbd></button>{/if}</div><h1>{board.name}</h1></div></div>
+  <main><div class="boardhead"><div><div class="canvas-label">
+    <span class="section">Canvas</span>
+    <span class="editing-presence" aria-live="polite">{#if editorsByPage.get(current)?.length}{editingNotice(editorsByPage.get(current)!)}{/if}</span>
+    {#if !editing}<span class="read-caption">Editing is locked</span><button class="enable-edit" onclick={toggleEdit}>Enable editing <kbd>E</kbd></button>{/if}
+  </div><h1>{board.name}</h1></div></div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="viewport" class:drawing-mode={drawingMode} bind:this={viewport} bind:clientWidth={width} bind:clientHeight={height} oncontextmenu={e=>canvasMenu(e)} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>{wire=undefined;stroke=undefined;drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;commit();}} ondragover={e=>e.preventDefault()} ondrop={drop}>
       <button class="canvas-add" aria-label="Add canvas element" title="Add canvas element" disabled={!editing} onpointerdown={e=>e.stopPropagation()} onclick={e=>canvasMenu(e,true)}>+</button>

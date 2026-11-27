@@ -12,6 +12,7 @@ use tauri::State;
 pub mod access;
 pub(super) mod files;
 mod images;
+pub mod presence;
 mod session_store;
 
 const API: &str = "https://api.github.com";

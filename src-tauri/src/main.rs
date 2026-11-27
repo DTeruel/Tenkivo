@@ -182,6 +182,7 @@ fn main() {
             online::online_open,
             online::online_save,
             online::open_project_cache,
+            online::presence::online_page_presence,
             online::clear_project_cache,
             online::files::online_attachment_size,
             online::files::stage_online_attachment,
