@@ -761,7 +761,7 @@
       if(status===readHint)status='';
       return;
     }
-    const users=[...project.users??[],...(onlineIdentity?[onlineIdentity]:[])];
+    const users=[...(onlineIdentity?[onlineIdentity]:[]),...project.users??[]];
     const last=recentEditors().map(id=>users.find(u=>u.id===id)).find(Boolean);
     pickerUsers=last?[last,...users.filter(u=>u.id!==last.id)]:[...users];
     selectedUser=pickerUsers[0]?.id??'';registering=!users.length;userName='';userIcon=userIcons[0];ask('Select editing user');
