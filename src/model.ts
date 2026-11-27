@@ -3,7 +3,7 @@ export type Department = string;
 export interface DepartmentInfo {id:string;name:string;color:string}
 export const defaultCatalog:DepartmentInfo[]=departments.map((id,i)=>({id,name:id,color:['#bd9b56','#799ccf','#71aa8d','#b48fbd'][i]}));
 export type Kind = 'Note' | 'Image' | 'Frame' | 'Page link' | 'Attachment' | 'Web link' | 'Drawing';
-export interface Attachment {path:string;local:boolean;folder:boolean}
+export interface Attachment {path:string;local:boolean;folder:boolean;shared?:{sha256:string;blob?:string}}
 export function mediaKind(attachment:Attachment){
   if(attachment.folder)return;
   if(/\.(?:mp3|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i.test(attachment.path))return 'audio';
@@ -206,7 +206,9 @@ export function validProject(value: unknown): value is Project {
         (o.departments===undefined || (Array.isArray(o.departments) && o.departments.every(d=>typeof d==='string'))) &&
         (o.kind!=='Drawing' || validDrawing(o.drawing)) &&
         (o.showTitle===undefined || typeof o.showTitle==='boolean') &&
-        (o.attachment===undefined || (o.attachment && typeof o.attachment.path==='string' && typeof o.attachment.local==='boolean' && typeof o.attachment.folder==='boolean')) &&
+        (o.attachment===undefined || (o.attachment && typeof o.attachment.path==='string' && typeof o.attachment.local==='boolean' && typeof o.attachment.folder==='boolean' &&
+          (o.attachment.shared===undefined || (o.attachment.shared && !o.attachment.folder && o.attachment.local &&
+            /^[a-f0-9]{64}$/.test(o.attachment.shared.sha256) && (o.attachment.shared.blob===undefined || /^[a-f0-9]{40}$/.test(o.attachment.shared.blob)))))) &&
         (o.kind!=='Attachment' || !!o.attachment) && (o.kind!=='Web link' || (typeof o.url==='string' && !!webAddress(o.url))) &&
         typeof o.name === 'string' && typeof o.body === 'string' && validLinks(o) && typeof o.department==='string' && (o.rotation===undefined || Number.isFinite(o.rotation)) &&
         [o.x,o.y,o.w,o.h,o.size].every(Number.isFinite) && o.w>0 && o.h>0 && o.size>0 &&

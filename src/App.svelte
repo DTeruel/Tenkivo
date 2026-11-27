@@ -7,6 +7,7 @@
   import ExportDialog from './ExportDialog.svelte';
   import AttachmentImage from './AttachmentImage.svelte';
   import MediaPlayer from './MediaPlayer.svelte';
+  import {materializeAttachment} from './sharedAttachment';
   import {getCurrentWebview} from '@tauri-apps/api/webview';
   import {getVersion} from '@tauri-apps/api/app';
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
@@ -347,10 +348,13 @@
     }catch(error){onlineError=String(error);}
     finally{onlineWorking=false;}
   }
-  function checkOnlineAttachments(doc:Project){
+  function projectAttachments(doc:Project){
     const pages=[...doc.pages,...doc.trash??[],...(doc.pageHistory??[]).map(version=>version.page)];
-    if(pages.some(page=>page.items.some(item=>item.attachment)))
-      throw Error('This project contains local file attachments, including those in page history. Saving online is unavailable until those attachments can be shared. Use New online project to start a separate shared project.');
+    return pages.flatMap(page=>page.items.flatMap(item=>item.attachment?[item.attachment]:[]));
+  }
+  function checkOnlineAttachments(doc:Project){
+    if(projectAttachments(doc).some(attachment=>!attachment.shared))
+      throw Error('This document contains local file paths, including possible entries in page history. Online projects require shared attachments.');
   }
   function snapshotForSave(online=false){
     commit();typingField=null;
@@ -408,18 +412,28 @@
   }
   async function saveAsLocal(){
     if(busy || !onlineProject)return;
+    const repo=onlineProject.repo;
+    const wasEditing=editing;
     busy=true;onlineError='';
     try{
       const destination=await save({defaultPath:project.name+'.tkv',filters:fileFilters});
       if(destination){
         const snapshot=snapshotForSave();
-        await invoke('save_project',{path:destination,document:snapshot.raw});
+        if(projectAttachments(project).some(attachment=>attachment.shared)){
+          editing=false;
+          const document=await invoke<string>('save_online_project_locally',{repo,path:destination,document:snapshot.raw});
+          const local=JSON.parse(document) as Project;
+          project=local;
+          resetEdits(true);
+        }else{
+          await invoke('save_project',{path:destination,document:snapshot.raw});
+          acceptSaved(snapshot);
+        }
         path=destination;onlineProject=undefined;rememberProject(destination);
-        acceptSaved(snapshot);
         status='Project saved locally';
       }
     }catch(error){recordError('Save as local',error);status=String(error);}
-    finally{busy=false;}
+    finally{editing=wasEditing;busy=false;}
   }
   async function manageProjectCache(action:'open'|'clear'){
     const repo=onlineProject?.repo;
@@ -428,7 +442,7 @@
     try{
       if(action==='open'){
         await invoke('open_project_cache',{repo});
-      }else if(await confirm('Clear downloaded images from this device? Tenkivo will download them again when needed.')){
+      }else if(await confirm('Clear downloaded files from this device? Tenkivo will download them again when needed.')){
         const removed=await invoke<number>('clear_project_cache',{repo});
         projectCacheStatus=removed===0?'The cache was already empty.':'Project cache cleared.';
       }
@@ -441,13 +455,38 @@
     if(!editing){status=readHint;return;}
     if(!paths.length || document.querySelector('dialog[open]'))return;
     if(onlineProject){
-      void importEmbeddedImages(paths.map(path=>({
-        name:path.split(/[\\/]/).at(-1)??'Image',
-        read:()=>invoke<string>('read_embedded_image',{path})
-      })),x,y);
+      void importOnlineFiles(onlineProject.repo,paths,x,y);
       return;
     }
     incoming=paths;dropAt={x,y};importError='';fileDialog.showModal();
+  }
+  async function confirmOnlineFile(name:string,bytes:number){
+    return bytes<=5*1024*1024 || await confirm(name+' ('+(bytes/(1024*1024)).toFixed(1)+' MiB) will be shared at its original size. Add this file?');
+  }
+  async function importOnlineFiles(repo:string,paths:string[],x:number,y:number){
+    const owner=project,sourcePage=current;
+    const stillEditing=()=>project===owner && current===sourcePage && editing && onlineProject?.repo===repo;
+    let failure='';
+    for(const [index,file] of paths.entries()){
+      const name=file.split(/[\\/]/).at(-1)??'File';
+      try{
+        const bytes=await invoke<number>('online_attachment_size',{path:file});
+        if(!stillEditing())return;
+        if(!await confirmOnlineFile(name,bytes))continue;
+        if(!stillEditing())return;
+        const left=x+index*18,top=y+index*18;
+        if(/\.(png|jpg|jpeg|gif|webp)$/i.test(name)){
+          await importEmbeddedImages([{name,read:()=>invoke<string>('read_embedded_image',{path:file})}],left,top,false);
+        }else{
+          const attachment=await invoke<Attachment>('stage_online_attachment',{repo,path:file});
+          if(!stillEditing())return;
+          const media=mediaKind(attachment);
+          add('Attachment',{name:attachment.path,attachment,department:'Design',x:left,y:top,
+            w:media==='video'?360:media==='audio'?300:230,h:media==='video'?240:media==='audio'?120:100});
+        }
+      }catch(error){failure='Could not add '+name+'. '+String(error);}
+    }
+    if(failure && stillEditing())status=failure;
   }
   async function attach(local:boolean){
     if(copying)return;copying=true;
@@ -484,14 +523,14 @@
     }catch(err){recordError('Choose resource',err);status=String(err);}
   }
   async function openResource(o:Item){
-    try{if(o.attachment)await invoke('open_attachment',{project:path,attachment:o.attachment});
+    try{if(o.attachment)await invoke('open_attachment',{project:path,attachment:await materializeAttachment(o.attachment,onlineProject?.repo)});
       else if(o.url && isTauri())await invoke('open_web',{url:o.url});
       else if(o.url)window.open(o.url,'_blank','noopener,noreferrer');
     }catch(err){status='Could not open '+o.name+'. '+String(err);}
   }
   async function revealAttachment(o:Item){
     if(!o.attachment)return;
-    try{await invoke('reveal_attachment',{project:path,attachment:o.attachment});}
+    try{await invoke('reveal_attachment',{project:path,attachment:await materializeAttachment(o.attachment,onlineProject?.repo)});}
     catch(error){status='Could not show the attachment in its folder. '+String(error);}
   }
   let copyingItem=$state('');
@@ -511,8 +550,20 @@
     finally{copyingItem='';}
   }
   async function relink(o:Item){
-    if(!o.attachment)return;
-    const file=await open({directory:o.attachment.folder});if(file){o.attachment={...o.attachment,path:file,local:false};change();}
+    const previous=o.attachment,owner=project,sourcePage=board,repo=onlineProject?.repo;
+    if(!previous)return;
+    try{
+      const file=await open({directory:previous.folder});
+      if(!file)return;
+      let replacement:Attachment;
+      if(previous.shared && repo){
+        const bytes=await invoke<number>('online_attachment_size',{path:file});
+        if(!await confirmOnlineFile(file.split(/[\\/]/).at(-1)??'File',bytes))return;
+        replacement=await invoke<Attachment>('stage_online_attachment',{repo,path:file});
+      }else replacement={...previous,path:file,local:false};
+      if(project!==owner || !editing || !owner.pages.includes(sourcePage) || !sourcePage.items.includes(o) || o.attachment!==previous)return;
+      o.attachment=replacement;change();
+    }catch(error){status='Could not replace the attachment. '+String(error);}
   }
   function insertUrl(text:string,x?:number,y?:number){
     const u=webAddress(text);if(!u)return false;
@@ -1138,7 +1189,7 @@
     if(kind==='Frame'){o.w=480;o.h=300;board.items.unshift(o);}else board.items.push(o);
     ids=[o.id];focusArea='canvas';change();return o;
   }
-  async function importEmbeddedImages(files:{name:string;read:()=>Promise<string>}[], x=(width/2-tx)/zoom,y=(height/2-ty)/zoom) {
+  async function importEmbeddedImages(files:{name:string;read:()=>Promise<string>}[], x=(width/2-tx)/zoom,y=(height/2-ty)/zoom,warnLarge=true) {
     if(!editing || !files.length)return;
     const owner=project,sourcePage=current;
     let failure='';
@@ -1146,11 +1197,11 @@
       try {
         const source=await f.read();
         if(project!==owner || current!==sourcePage || !editing)return;
-        if(onlineProject){
+        if(onlineProject && warnLarge){
           const encodedLength=source.length-source.indexOf(',')-1;
           const padding=source.endsWith('==')?2:source.endsWith('=')?1:0;
           const bytes=Math.floor(encodedLength*3/4)-padding;
-          if(bytes>5*1024*1024 && !await confirm(f.name+' ('+(bytes/(1024*1024)).toFixed(1)+' MiB) will be shared at its original size. Add this image?'))continue;
+          if(!await confirmOnlineFile(f.name,bytes))continue;
           if(project!==owner || current!==sourcePage || !editing)return;
         }
         const img=new Image();img.src=source;await img.decode();
@@ -1550,7 +1601,7 @@
               onblur={()=>finishTitle(o,true)} onkeydown={e=>{if(e.key==='Enter' || e.key==='Escape'){e.preventDefault();e.stopPropagation();finishTitle(o,e.key==='Enter');}}}/>
               {:else}{#if o.kind==='Frame'}▣　{:else if o.kind==='Page link'}↗　{/if}{o.name}{/if}{#if editing && active?.id===o.id && frameOnly===o.id}<small>Frame only</small>{/if}</div>{/if}
             {#if o.kind==='Attachment' && o.attachment && media}
-              <MediaPlayer kind={media} project={path} attachment={o.attachment} name={o.name}/>
+              <MediaPlayer kind={media} project={path} attachment={o.attachment} name={o.name} repo={onlineProject?.repo}/>
             {:else if o.kind==='Attachment'}<small>{o.attachment?.folder?'Folder':'File'} · {o.attachment?.local?'Project copy':'Linked original'}</small>{/if}
             {#if o.url}
               {@const video=videoId(o.url)}
@@ -1637,7 +1688,7 @@
       <div class="dimensions">{#each ['w','h'] as key}<label>{key==='w'?'Width':'Height'}<input type="number" min="40" value={active[key as 'w'|'h']} onchange={e=>{if(active){active[key as 'w'|'h']=Math.max(40,Number(e.currentTarget.value)||40);change();}}}/></label>{/each}</div>
       <button onclick={()=>chooseLink()}>{objectLink(active)?'Edit object link':'Link object'}</button>
     </fieldset>
-      {#if active.attachment}<p>{active.attachment.local?'Project copy':'Linked original'}<br>{active.attachment.path}</p><div class="attachment-actions">
+      {#if active.attachment}<p>{active.attachment.shared?'Shared file':active.attachment.local?'Project copy':'Linked original'}<br>{active.attachment.path}</p><div class="attachment-actions">
         <button disabled={!editing || copyingItem===active.id} onclick={()=>relink(active!)}>Relink…</button>
         <button onclick={()=>revealAttachment(active!)}>Open folder</button>
         {#if !active.attachment.local}<button disabled={!editing || !!copyingItem} onclick={()=>copyToProject(active!)}>{copyingItem===active.id?'Copying…':'Copy to project'}</button>{/if}
@@ -1665,7 +1716,7 @@
           <hr/>
         {/if}
         <div class="menu-heading">New</div>
-        {#each ['Note','Image','Frame','Drawing','Page link','Web link',...(isTauri() && !onlineProject?['File','Folder']:[])] as kind}
+        {#each ['Note','Image','Frame','Drawing','Page link','Web link',...(isTauri()?(onlineProject?['File']:['File','Folder']):[])] as kind}
           <button disabled={!editing} onclick={()=>insert(kind)}>{kind}</button>
         {/each}
         {#if !menu.fromAdd}<button class="menu-export" onclick={()=>{menu=undefined;exporter.show(board);}}>Export page as PDF…</button>{/if}
@@ -1817,7 +1868,7 @@
       {#if !creating && onlineProject}
         <section class="project-cache" aria-label="Project cache">
           <h3>Project cache</h3>
-          <p>Downloaded images are kept on this device so the project opens faster.</p>
+          <p>Downloaded files are kept on this device so they open faster.</p>
           <div class="row">
             <button type="button" disabled={projectCacheBusy} onclick={()=>manageProjectCache('open')}>Open cache folder</button>
             <button type="button" disabled={projectCacheBusy} onclick={()=>manageProjectCache('clear')}>Clear cache…</button>

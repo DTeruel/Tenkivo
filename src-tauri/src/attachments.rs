@@ -10,6 +10,8 @@ pub struct Attachment {
     pub path: String,
     pub local: bool,
     pub folder: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared: Option<crate::online::files::SharedFile>,
 }
 #[derive(Serialize)]
 pub struct Imported {
@@ -66,7 +68,7 @@ mod tests {
         let file = dir.join("Audio, versión 2.wav");
         fs::write(&file, []).unwrap();
         reveal_attachment(project.to_string_lossy().into_owned(), Attachment {
-            local:true, folder:false, path:"clip folder/Audio, versión 2.wav".into(),
+            local:true, folder:false, path:"clip folder/Audio, versión 2.wav".into(), shared:None,
         }).unwrap();
         let result = std::process::Command::new("powershell.exe")
             .args(["-NoProfile","-Command",r#"
@@ -203,6 +205,7 @@ fn import(project: &str, paths: Vec<String>, local: bool) -> Result<Vec<Imported
                 path: stored,
                 local,
                 folder,
+                shared: None,
             },
         });
     }
@@ -222,6 +225,7 @@ pub async fn import_attachments(
         .map_err(|e| e.to_string())?
 }
 pub(super) fn resolve(project: &str, a: &Attachment) -> Result<PathBuf, String> {
+    if a.shared.is_some() { return Err("Download the shared attachment first.".into()); }
     let path = Path::new(&a.path);
     if a.local {
         if !path.components().all(|c| matches!(c, Component::Normal(_)))

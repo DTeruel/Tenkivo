@@ -1,4 +1,6 @@
 use super::{checked, connection_error, repository_url, DOC, GITHUB_FILE_LIMIT};
+use super::{files, Online};
+use crate::attachments::Attachment;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{Client, RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
@@ -18,13 +20,14 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub(super) struct Assets {
-    files: BTreeMap<String, Vec<u8>>,
+    images: BTreeMap<String, Vec<u8>>,
+    attachments: BTreeMap<String, Option<String>>,
     retained: BTreeSet<String>,
 }
 
 impl Assets {
     pub(super) fn is_empty(&self) -> bool {
-        self.files.is_empty()
+        self.images.is_empty() && self.attachments.is_empty()
     }
 }
 
@@ -35,7 +38,7 @@ pub(super) fn git_sha(value: &Value) -> Result<&str, String> {
         .ok_or_else(|| "GitHub did not return a valid file revision.".into())
 }
 
-fn valid_git_sha(sha: &str) -> bool {
+pub(super) fn valid_git_sha(sha: &str) -> bool {
     sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
@@ -128,9 +131,26 @@ pub(super) fn separate(document: &str) -> Result<(String, Assets), String> {
         let name = format!("{}.{extension}", digest(&bytes));
         *source = format!("{IMAGE_REF}{name}");
         if retained {
-            assets.retained.insert(name.clone());
+            assets.retained.insert(format!("{IMAGE_DIR}/{name}"));
         }
-        assets.files.entry(name).or_insert(bytes);
+        assets.images.entry(name).or_insert(bytes);
+        Ok(())
+    })?;
+    files::visit_attachments(&mut content, |value, retained| {
+        let attachment: Attachment =
+            serde_json::from_value(value.clone()).map_err(|_| "Invalid attachment.")?;
+        let shared = files::validate_attachment(&attachment)?;
+        let path = file_path(&shared.sha256);
+        if retained {
+            assets.retained.insert(path);
+        }
+        let blob = assets
+            .attachments
+            .entry(shared.sha256.clone())
+            .or_insert(None);
+        if shared.blob.is_some() {
+            *blob = shared.blob.clone();
+        }
         Ok(())
     })?;
     Ok((
@@ -186,7 +206,7 @@ fn cache_file(folder: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
 
 pub(super) fn clear_cache(data_dir: &Path, repo: &str) -> Result<u64, String> {
     let folder = cache_dir(data_dir, repo)?;
-    let mut count = 0;
+    let mut count = files::clear_file_cache(&folder)?;
     for file in fs::read_dir(folder).map_err(|error| error.to_string())? {
         let file = file.map_err(|error| error.to_string())?;
         if file
@@ -210,7 +230,7 @@ pub(super) fn cache_saved(data_dir: &Path, repo: &str, assets: &Assets) {
         return;
     }
     if let Ok(folder) = cache_dir(data_dir, repo) {
-        for (name, bytes) in &assets.files {
+        for (name, bytes) in &assets.images {
             if !folder.join(name).is_file() {
                 let _ = cache_file(&folder, name, bytes);
             }
@@ -229,6 +249,15 @@ pub(super) async fn hydrate(
 ) -> Result<String, String> {
     let mut document: Value =
         serde_json::from_slice(document).map_err(|_| "Invalid project document.")?;
+    files::visit_attachments(&mut document, |value, _| {
+        let attachment: Attachment =
+            serde_json::from_value(value.clone()).map_err(|_| "Invalid attachment.")?;
+        let shared = files::validate_attachment(&attachment)?;
+        if shared.blob.is_none() {
+            return Err("A shared file is missing its GitHub revision.".into());
+        }
+        Ok(())
+    })?;
     let mut names = BTreeMap::new();
     visit_sources(&mut document, |source, _| {
         if let Some(reference) = source.strip_prefix(IMAGE_REF) {
@@ -381,8 +410,12 @@ async fn publish_tree(
     Ok((git_sha(&commit["sha"])?.into(), tree_sha.into()))
 }
 
-fn image_entry(name: &str, sha: Option<&str>) -> Value {
-    json!({"path":format!("{IMAGE_DIR}/{name}"),"mode":"100644","type":"blob","sha":sha})
+fn file_path(hash: &str) -> String {
+    format!("{}/{hash}.bin", files::FILE_DIR)
+}
+
+fn asset_entry(path: &str, sha: Option<&str>) -> Value {
+    json!({"path":path,"mode":"100644","type":"blob","sha":sha})
 }
 
 fn historic_references(document: &[u8]) -> Result<BTreeMap<String, String>, String> {
@@ -393,15 +426,26 @@ fn historic_references(document: &[u8]) -> Result<BTreeMap<String, String>, Stri
         if let Some(reference) = source.strip_prefix(IMAGE_REF) {
             let (name, sha) = parse_reference(reference)?;
             if let Some(sha) = sha {
-                refs.insert(name.to_owned(), sha.to_owned());
+                refs.insert(format!("{IMAGE_DIR}/{name}"), sha.to_owned());
             }
+        }
+        Ok(())
+    })?;
+    files::visit_attachments(&mut document, |value, _| {
+        let attachment: Attachment =
+            serde_json::from_value(value.clone()).map_err(|_| "Invalid attachment.")?;
+        let file = files::validate_attachment(&attachment)?;
+        if let Some(sha) = &file.blob {
+            refs.insert(file_path(&file.sha256), sha.clone());
         }
         Ok(())
     })?;
     Ok(refs)
 }
 
-pub(super) async fn save_with_images(
+pub(super) async fn save_with_assets(
+    state: &Online,
+    repo: &str,
     client: &Client,
     token: &str,
     url: &str,
@@ -426,7 +470,7 @@ pub(super) async fn save_with_images(
         StatusCode::NOT_FOUND | StatusCode::CONFLICT
     ) && expected.is_none()
     {
-        return Err("Create a README in the private repository to initialize its default branch before saving a project with images.".into());
+        return Err("Create a README in the private repository to initialize its default branch before saving a project with files.".into());
     }
     let branch_head: Value = checked(response)?.json().await.map_err(connection_error)?;
     let mut parent = git_sha(&branch_head["commit"]["sha"])?.to_owned();
@@ -446,26 +490,48 @@ pub(super) async fn save_with_images(
         .find(|entry| entry.path == ".tenkivo" && entry.kind == "tree")
     {
         let directories = tree(client, token, url, &hidden.sha).await?;
-        if let Some(images) = directories
-            .iter()
-            .find(|entry| entry.path == "images" && entry.kind == "tree")
-        {
-            stored.extend(
-                tree(client, token, url, &images.sha)
-                    .await?
-                    .into_iter()
-                    .filter(|entry| entry.kind == "blob" && asset_name(&entry.path).is_some())
-                    .map(|entry| (entry.path, entry.sha)),
-            );
+        for (name, prefix) in [("images", IMAGE_DIR), ("files", files::FILE_DIR)] {
+            if let Some(directory) = directories
+                .iter()
+                .find(|entry| entry.path == name && entry.kind == "tree")
+            {
+                stored.extend(
+                    tree(client, token, url, &directory.sha)
+                        .await?
+                        .into_iter()
+                        .filter(|entry| {
+                            entry.kind == "blob"
+                                && if name == "images" {
+                                    asset_name(&entry.path).is_some()
+                                } else {
+                                    entry
+                                        .path
+                                        .strip_suffix(".bin")
+                                        .is_some_and(files::valid_hash)
+                                }
+                        })
+                        .map(|entry| (format!("{prefix}/{}", entry.path), entry.sha)),
+                );
+            }
         }
     }
     if stored.is_empty() && assets.is_empty() {
         return Ok(None);
     }
+    enum Source<'a> {
+        Image(&'a [u8]),
+        File(&'a str, Option<&'a str>),
+    }
+    let mut candidates = BTreeMap::new();
+    for (name, bytes) in &assets.images {
+        candidates.insert(format!("{IMAGE_DIR}/{name}"), Source::Image(bytes));
+    }
+    for (hash, blob) in &assets.attachments {
+        candidates.insert(file_path(hash), Source::File(hash, blob.as_deref()));
+    }
     let mut previous_history = BTreeMap::new();
     if let Some(previous) = expected.filter(|_| {
-        assets
-            .files
+        candidates
             .keys()
             .any(|name| !assets.retained.contains(name) && !stored.contains_key(name))
     }) {
@@ -484,37 +550,46 @@ pub(super) async fn save_with_images(
     let mut entries: Vec<Value> = stored
         .keys()
         .filter(|name| !assets.retained.contains(*name))
-        .map(|name| image_entry(name, None))
+        .map(|path| asset_entry(path, None))
         .collect();
-    let mut archived: BTreeMap<&str, String> = BTreeMap::new();
+    let mut resolved = BTreeMap::new();
     let mut archive_entries = Vec::new();
-    for (name, bytes) in &assets.files {
-        let retained = assets.retained.contains(name);
-        if let Some(sha) = stored.get(name) {
-            if !retained {
-                archived.insert(name.as_str(), sha.to_owned());
-            }
+    for (path, source) in candidates {
+        let retained = assets.retained.contains(&path);
+        if let Some(sha) = stored.get(&path) {
+            resolved.insert(path, sha.clone());
             continue;
         }
         if !retained {
-            if let Some(sha) = previous_history.get(name) {
-                archived.insert(name.as_str(), sha.to_owned());
+            if let Some(sha) = previous_history.get(&path) {
+                resolved.insert(path, sha.clone());
                 continue;
             }
         }
-        let blob = git_write(
-            client.post(format!("{url}/git/blobs")).bearer_auth(token),
-            json!({"content": STANDARD.encode(bytes), "encoding":"base64"}),
-        )
-        .await?;
-        let sha = git_sha(&blob["sha"])?;
+        let sha = match source {
+            Source::File(_, Some(sha)) => sha.to_owned(),
+            _ => {
+                let encoded = match source {
+                    Source::Image(bytes) => STANDARD.encode(bytes),
+                    Source::File(hash, _) => {
+                        STANDARD.encode(files::staged_bytes(state, repo, hash)?)
+                    }
+                };
+                let blob = git_write(
+                    client.post(format!("{url}/git/blobs")).bearer_auth(token),
+                    json!({"content":encoded,"encoding":"base64"}),
+                )
+                .await?;
+                git_sha(&blob["sha"])?.to_owned()
+            }
+        };
         if retained {
-            entries.push(image_entry(name, Some(sha)));
+            entries.push(asset_entry(&path, Some(&sha)));
         } else {
-            archive_entries.push(image_entry(name, Some(sha)));
-            entries.push(image_entry(name, None));
-            archived.insert(name.as_str(), sha.to_owned());
+            archive_entries.push(asset_entry(&path, Some(&sha)));
+            entries.push(asset_entry(&path, None));
         }
+        resolved.insert(path, sha);
     }
     // Images known only to local page history need a parent commit to keep their blobs reachable.
     if !archive_entries.is_empty() {
@@ -525,7 +600,7 @@ pub(super) async fn save_with_images(
             &parent,
             &base_tree,
             archive_entries,
-            "Archive images used by Tenkivo page history",
+            "Archive files used by Tenkivo page history",
         )
         .await?;
     }
@@ -533,10 +608,24 @@ pub(super) async fn save_with_images(
         serde_json::from_str(document).map_err(|_| "Invalid project document.")?;
     visit_sources(&mut document, |source, _| {
         if let Some(name) = source.strip_prefix(IMAGE_REF) {
-            if let Some(sha) = archived.get(name) {
+            let path = format!("{IMAGE_DIR}/{name}");
+            if let Some(sha) = resolved
+                .get(&path)
+                .filter(|_| !assets.retained.contains(&path))
+            {
                 *source = format!("{IMAGE_REF}{name}@{sha}");
             }
         }
+        Ok(())
+    })?;
+    files::visit_attachments(&mut document, |value, _| {
+        let hash = value["shared"]["sha256"]
+            .as_str()
+            .ok_or("Invalid attachment.")?;
+        let sha = resolved
+            .get(&file_path(hash))
+            .ok_or("A shared attachment could not be saved.")?;
+        value["shared"]["blob"] = json!(sha);
         Ok(())
     })?;
     let document = serde_json::to_string(&document).map_err(|error| error.to_string())?;

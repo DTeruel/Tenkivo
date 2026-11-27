@@ -1,11 +1,12 @@
 <script lang="ts">
   import {convertFileSrc} from '@tauri-apps/api/core';
   import {invoke} from './diagnostics.svelte';
+  import {materializeAttachment} from './sharedAttachment';
   import type {Attachment} from './model';
 
-  let {project,attachment,name,kind}:{kind:"audio"|"video";project:string;attachment:Attachment;name:string}=$props();
+  let {project,attachment,name,kind,repo}:{kind:"audio"|"video";project:string;attachment:Attachment;name:string;repo?:string}=$props();
   let failed=$state('');
-  let source=$derived(invoke<string>('attachment_media',{project,attachment:{...attachment}}).then(file=>convertFileSrc(file)));
+  let source=$derived(materializeAttachment(attachment,repo).then(ready=>invoke<string>('attachment_media',{project,attachment:ready})).then(file=>convertFileSrc(file)));
 </script>
 
 {#await source}

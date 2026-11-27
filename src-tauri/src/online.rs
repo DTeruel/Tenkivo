@@ -10,6 +10,7 @@ use std::{
 use tauri::State;
 
 pub mod access;
+pub(super) mod files;
 mod images;
 mod session_store;
 
@@ -26,11 +27,21 @@ pub fn github_client_id() -> Option<&'static str> {
         .or(Some(TENKIVO_GITHUB_CLIENT_ID))
 }
 
-pub struct Online(Mutex<Session>, PathBuf, AtomicU64);
+pub struct Online(
+    Mutex<Session>,
+    PathBuf,
+    AtomicU64,
+    Mutex<Option<tempfile::TempDir>>,
+);
 
 impl Online {
     pub fn new(data_dir: PathBuf) -> Self {
-        Self(Mutex::new(Session::default()), data_dir, AtomicU64::new(0))
+        Self(
+            Mutex::new(Session::default()),
+            data_dir,
+            AtomicU64::new(0),
+            Mutex::new(None),
+        )
     }
 }
 
@@ -547,7 +558,9 @@ pub async fn online_save(
         return Err("GitHub cannot store a project document larger than 100 MiB. This limit applies to the document file only; images are stored separately.".into());
     }
     if !assets.is_empty() || sha.is_some() {
-        let project_sha = images::save_with_images(
+        let project_sha = images::save_with_assets(
+            &state,
+            &repo,
             &client,
             &token,
             &url,

@@ -154,11 +154,13 @@ Tenkivo can keep a shared project in a private GitHub repository. Each participa
 
 Tenkivo includes the public Client ID of its GitHub App. To build against a different registration, set `TENKIVO_GITHUB_CLIENT_ID` as a local build environment variable or a GitHub Actions repository variable. That registration needs **Device Flow**, **Contents** and **Administration** repository permissions set to **Read and write**, and **Any account** installation visibility so collaborators can authorize it. On Windows, Tenkivo uses Windows Data Protection to save your session for your Windows user and renews it when needed. Choose **Sign out** from the GitHub account button to remove the saved session.
 
-**Save** writes to the current project. **Save as Online…** and **Save as Local…** switch the editor to the copy that was just saved. If GitHub rejects an outdated revision, use **Save as Local…** to preserve your edits before reopening the online project. Use **Reload from GitHub** to get the newest saved revision while an online project is open. This version uses manual save and reload. GitHub stores shared images as separate files at their original quality. Tenkivo asks before adding an image larger than 5 MiB. GitHub's 100 MiB file limit applies to each image or the project document. Existing online projects with embedded images open normally, then use the separate files on their next save. Update other copies of Tenkivo before they open the new shared format. Local file and folder attachments require a local project.
+**Save** writes to the current project. **Save as Online…** and **Save as Local…** switch the editor to the copy that was just saved. If GitHub rejects an outdated revision, use **Save as Local…** to preserve your edits before reopening the online project. Use **Reload from GitHub** to get the newest saved revision while an online project is open. This version uses manual save and reload.
 
-For an online project, **Project settings → Project cache** can open the local image cache folder or clear its downloaded images. Tenkivo downloads them again when needed.
+Online projects accept individual files through **New → File** or drag and drop. Tenkivo asks before adding a file larger than 5 MiB. GitHub's 100 MiB limit applies per file or project document. Files are shared at their original size and are downloaded when opened. **Save as Local…** copies shared attachments into the local project's assets folder. Older Tenkivo versions need to be updated before opening projects with shared attachments. Existing local file paths must be reattached in the online project, and folder attachments require a local project.
 
-When you save online, Tenkivo removes managed image files from the current branch if no active page or page in the trash uses them. Previous page versions can still retrieve their images from Git history. This change applies to future saves and keeps existing Git history intact.
+For an online project, **Project settings → Project cache** can open the cache folder or clear its downloaded files. Tenkivo downloads them again when needed.
+
+When you save online, Tenkivo removes managed files from the current branch if no active page or page in the trash uses them. Previous page versions can still retrieve those files from Git history.
 
 ## Portable releases
 
