@@ -117,6 +117,9 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .project-form fieldset {margin-bottom:16px}
 .settings-footer {display:flex;align-items:center;gap:8px}
 .settings-footer .settings-back {margin-left:auto}
+.manual-online-open {margin-top:16px}
+.manual-online-open summary {cursor:pointer;color:var(--muted)}
+.manual-online-open form {margin-top:12px}
 
 .add-project-entry {display:block;width:100%}
 .department-editor select {width:4em;flex:none}

@@ -1689,18 +1689,24 @@
         <p>Tenkivo uses this account as your editing identity.</p>
         <button disabled={busy} onclick={signOut}>Sign out</button>
       {:else}
-      {#if onlineMode==='open'}{@render discoverableProjects()}{/if}
-      {#if onlineMode==='save'}<p>Save this project to a private GitHub repository and continue editing the online copy.</p>{/if}
-      <label>Private repository<input placeholder="owner/repository" bind:value={onlineRepo} disabled={onlineWorking}/></label>
       {#if onlineMode==='open'}
-        <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('open')}>Open from GitHub</button>
-      {:else if onlineMode==='create'}
-        <form onsubmit={e=>{e.preventDefault();void accessOnline('create');}}>
-          <label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>
-          <button disabled={busy || !onlineRepo.trim() || !onlineNewName.trim()}>Create online project</button>
-        </form>
+        {@render discoverableProjects()}
+        {#if !discovering && (discoveryError || !discoveredProjects.length)}
+          <details class="manual-online-open">
+            <summary>Open by repository name…</summary>
+            <form onsubmit={e=>{e.preventDefault();void accessOnline('open');}}>
+              <label>Repository name<input required placeholder="owner/repository" bind:value={onlineRepo} disabled={busy}/></label>
+              <button disabled={busy || !onlineRepo.trim()}>Open repository</button>
+            </form>
+          </details>
+        {/if}
       {:else}
-        <button disabled={busy || !onlineRepo.trim()} onclick={()=>accessOnline('save')}>Save as Online</button>
+        {#if onlineMode==='save'}<p>Save this project to a private GitHub repository and continue editing the online copy.</p>{/if}
+        <form onsubmit={e=>{e.preventDefault();void accessOnline(onlineMode==='create'?'create':'save');}}>
+          <label>Private repository<input required placeholder="owner/repository" bind:value={onlineRepo} disabled={busy}/></label>
+          {#if onlineMode==='create'}<label>New project name<input required bind:value={onlineNewName} disabled={busy}/></label>{/if}
+          <button disabled={busy || !onlineRepo.trim() || (onlineMode==='create' && !onlineNewName.trim())}>{onlineMode==='create'?'Create online project':'Save as Online'}</button>
+        </form>
       {/if}
       {/if}
     {:else if deviceCode}
