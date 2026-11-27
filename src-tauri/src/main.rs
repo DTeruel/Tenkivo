@@ -155,10 +155,21 @@ fn main() {
             #[cfg(windows)]
             {
                 use tauri::Manager;
-                use webview2_com::AcceleratorKeyPressedEventHandler;
+                use webview2_com::{
+                    AcceleratorKeyPressedEventHandler,
+                    Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3,
+                };
+                use windows::core::Interface;
                 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_J, VK_MENU, VK_SHIFT};
                 let window = app.get_webview_window("main").ok_or("Missing main window")?;
                 window.with_webview(|view| unsafe {
+                    let settings = view.controller().CoreWebView2()
+                        .and_then(|webview| webview.Settings())
+                        .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
+                        .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
+                    if let Err(error) = settings {
+                        eprintln!("Could not disable browser shortcuts: {error}");
+                    }
                     let handler = AcceleratorKeyPressedEventHandler::create(Box::new(|_, args| {
                         if let Some(args) = args {
                             let mut key = 0;
