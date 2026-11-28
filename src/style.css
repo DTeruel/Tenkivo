@@ -243,12 +243,9 @@ dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width
 .background-picker label { min-width:0; margin:0; }
 .background-controls input[type=color],.background-controls button { height:32px; }
 .background-picker input[type=color] { padding:4px 7px; }
-.object:not(.frame):not(.drawing-object):not(.table-object) { background:color-mix(in srgb,var(--object-tint, var(--paper)) 25%,var(--paper)); }
 .object textarea { background:inherit; }
-.object.table-object { background:color-mix(in srgb,var(--table-header) 10%,transparent); --table-header:var(--table-color, light-dark(#e1e1e1, #414141)); }
-.object.table-object .caption { background:var(--table-header); color:var(--table-text, var(--ink)); padding-block:6px; }
-.object.frame { background:color-mix(in srgb,var(--frame-color) 10%,transparent); }
-.object.frame .caption { background:var(--frame-color); color:var(--frame-text); padding-block:6px; }
+.object:not(.drawing-object) { --card-header:var(--card-color, light-dark(#e1e1e1, #414141)); background:color-mix(in srgb,var(--card-header) 10%,transparent); }
+.object .caption { order:-1; background:var(--card-header); color:var(--card-text, var(--ink)); padding-block:6px; }
 .app-menu .background-picker { margin:0; }
 .app-menu .background-controls button { width:auto; }
 .project-search-results { display:grid; gap:4px; min-height:0; overflow:auto; align-content:start; }

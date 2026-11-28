@@ -34,8 +34,8 @@
 .pdf-paper a {color:#245490}
 .pdf-window {position:relative;overflow:hidden}
 .pdf-world {position:absolute;transform-origin:0 0;isolation:isolate}
-.pdf-object {position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px solid;border-radius:8px;background:color-mix(in srgb,var(--object-tint, white) 25%,white)}
-.pdf-object.frame {background:#f7f7f7;border-style:dashed;z-index:-1}
+.pdf-object {position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px solid;border-radius:8px}
+.pdf-object.frame {border-style:dashed;z-index:-1}
 .pdf-object strong {padding:8px 12px 5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
 .pdf-object small,.pdf-text {padding:4px 12px 8px;overflow-wrap:anywhere}
 .pdf-object img {width:100%;flex:1;min-height:0;object-fit:cover}
@@ -50,9 +50,6 @@
 }
 
 .pdf-image-link {position:absolute;inset:0}
-.pdf-object.frame { background:color-mix(in srgb,var(--frame-color) 10%,transparent); }
-.pdf-object.frame > strong { background:var(--frame-color); color:var(--frame-text); padding-block:6px; }
-.pdf-object.frame > strong a { color:inherit; }
-.pdf-object.table-object { background:color-mix(in srgb,var(--table-header) 10%,transparent); --table-header:var(--table-color, #e1e1e1); }
-.pdf-object.table-object > strong { background:var(--table-header); color:var(--table-text, #222); padding-block:6px; }
-.pdf-object.table-object > strong a { color:inherit; }
+.pdf-object:not(.drawing-object) { --card-header:var(--card-color, #e1e1e1); background:color-mix(in srgb,var(--card-header) 10%,transparent); }
+.pdf-object > strong { order:-1; background:var(--card-header); color:var(--card-text, #222); padding-block:6px; }
+.pdf-object > strong a { color:inherit; }

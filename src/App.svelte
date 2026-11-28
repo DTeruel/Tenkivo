@@ -2196,11 +2196,10 @@
         {#each visible as o (o.id)}
           {@const destination=objectLink(o)}
           {@const preview=backgroundPreview?.item===o?backgroundPreview.color:undefined}
-          {@const frameColor=o.kind==='Frame'?(preview??frameColorFor(o)):undefined}
-          {@const tableColor=o.kind==='Table'?(preview??o.backgroundColor):undefined}
+          {@const headerColor=o.kind==='Frame'?(preview??frameColorFor(o)):(preview??o.backgroundColor)}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:table-object={o.kind==='Table'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--object-tint={o.kind==='Note'?(preview??o.backgroundColor):undefined} style:--table-color={tableColor} style:--table-text={tableColor && frameHeaderText(tableColor)} style:--frame-color={frameColor} style:--frame-text={frameColor && frameHeaderText(frameColor)} ondblclick={e=>activate(o,e)}>
+          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} ondblclick={e=>activate(o,e)}>
             {#if o.kind==='Image' && o.attachment}<AttachmentImage project={path} attachment={o.attachment} name={o.name}/>{:else if o.kind==='Image'}<img draggable="false" src={o.source} alt={o.name} decoding="async"/>{/if}
             {#if o.drawing}<DrawingStroke drawing={o.drawing}/>{/if}
             {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}
