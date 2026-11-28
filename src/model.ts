@@ -109,6 +109,7 @@ export interface Item {
   link?: Destination; textLinks?: TextLink[];
   inheritDepartment?:boolean; departments?:Department[]; rotation?: number; autoFit?: boolean;
   frameBackground?:string;
+  backgroundColor?:string;
   showTitle?:boolean; attachment?:Attachment; url?:string;
 }
 function validDestination(value: Destination) {
@@ -253,6 +254,7 @@ export function validProject(value: unknown): value is Project {
         (o.departments===undefined || (Array.isArray(o.departments) && o.departments.every(d=>typeof d==='string'))) &&
         (o.kind!=='Table' || validTable(o.tableRows)) &&
         (o.kind!=='Drawing' || validDrawing(o.drawing)) &&
+        (o.backgroundColor===undefined || (typeof o.backgroundColor==='string' && /^#[a-f0-9]{6}$/i.test(o.backgroundColor))) &&
         (o.frameBackground===undefined || (typeof o.frameBackground==='string' && /^#[a-f0-9]{6}$/i.test(o.frameBackground))) &&
         (o.showTitle===undefined || typeof o.showTitle==='boolean') &&
         (o.attachment===undefined || (o.attachment && typeof o.attachment.path==='string' && typeof o.attachment.local==='boolean' && typeof o.attachment.folder==='boolean' &&
