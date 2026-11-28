@@ -2221,9 +2221,14 @@
     <label>Theme<select aria-label="Appearance" bind:value={theme} onchange={()=>localStorage.setItem('studio-theme',theme)}><option>System</option><option>Light</option><option>Dark</option></select></label>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
     <h3>Canvas Snapping</h3><p>Hold Ctrl while dragging. Set a step to zero to disable snapping for that transform.</p>
-    {#each snapKeys as key}<label>{key==='rotate'?'Rotation (degrees)':key==='resize'?'Resize (canvas units)':'Move (canvas units)'}
-      <input type="number" min="0" max={key==='rotate'?360:10000} step="any" value={snapping[key]} disabled={!welcome && !editing}
-        onchange={e=>setSnap(key,e.currentTarget)}/></label>{/each}
+    <div class="snap-fields">
+      {#each snapKeys as key}
+        <label>{key==='rotate'?'Rotation (degrees)':key==='resize'?'Resize (canvas units)':'Move (canvas units)'}
+          <input type="number" min="0" max={key==='rotate'?360:10000} step="any" value={snapping[key]} disabled={!welcome && !editing}
+            onchange={e=>setSnap(key,e.currentTarget)}/>
+        </label>
+      {/each}
+    </div>
     {#if welcome}<p>These defaults apply to projects without custom snapping values.</p>{:else if !editing}<p>Enable editing to change this project’s canvas snapping.</p>{/if}
     {#if isTauri()}<p class="app-version">Tenkivo · Version {appVersion}</p>{/if}
   </dialog>
