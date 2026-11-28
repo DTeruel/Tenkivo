@@ -96,16 +96,17 @@
           </svg>
           {#each s.items as o}
             {@const tags=o.inheritDepartment?(pageTags.get(s.page?.id??'')??[]):o.departments??[o.department]}
-            {@const color=(project.catalog??defaultCatalog).find(d=>d.id===tags[0])?.color??'#808080'}
-            {@const headerColor=o.kind==='Frame'?(o.frameBackground??color):o.backgroundColor}
+            {@const tagEntries=tags.flatMap(id=>(project.catalog??defaultCatalog).filter(tag=>tag.id===id))}
+            {@const headerColor=o.kind==='Frame'?(o.frameBackground??'#808080'):o.backgroundColor}
             {@const src=o.source??(o.attachment?images[JSON.stringify(o.attachment)]:undefined)}
             {@const dest=o.link??(o.target?{pageId:o.target}:undefined)}
-            <div class="pdf-object" class:drawing-object={!!o.drawing} class:frame={o.kind==='Frame'} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:border-color={color} style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} style:transform={'rotate('+(o.rotation??0)+'deg)'}>
+            <div class="pdf-object" class:drawing-object={!!o.drawing} class:frame={o.kind==='Frame'} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'}  style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} style:transform={'rotate('+(o.rotation??0)+'deg)'}>
               {#if o.kind==='Image' && src}<img src={src} alt={o.name}/>{/if}
               {#if o.drawing}<DrawingStroke drawing={o.drawing}/>
               {:else if o.kind==='Image' && o.showTitle===false}
                 {#if dest && sheetFor(dest)}<a class="pdf-image-link" href={sheetFor(dest)} aria-label={o.name}></a>{/if}
-              {:else}<strong>{#if o.kind==='Frame'}<span aria-hidden="true">▣ </span>{/if}{#if dest && sheetFor(dest)}<a href={sheetFor(dest)}>{o.name}</a>{:else if o.url}<a href={o.url}>{o.name}</a>{:else}{o.name}{/if}</strong>{/if}
+              {:else}<strong><span class="caption-title">{#if o.kind==='Frame'}<span aria-hidden="true">▣ </span>{/if}{#if dest && sheetFor(dest)}<a href={sheetFor(dest)}>{o.name}</a>{:else if o.url}<a href={o.url}>{o.name}</a>{:else}{o.name}{/if}</span>{#if tagEntries.length}<span class="page-tags" aria-label={tagEntries.map(tag=>tag.name).join(', ')}>{#each tagEntries as tag}<i style:background={tag.color}></i>{/each}</span>{/if}</strong>{/if}
+              {#if tagEntries.length && (o.drawing || o.kind==='Image' && o.showTitle===false)}<span class="page-tags floating-tags" aria-label={tagEntries.map(tag=>tag.name).join(', ')}>{#each tagEntries as tag}<i style:background={tag.color}></i>{/each}</span>{/if}
               {#if o.kind==='Table' && o.tableRows}<div class="table-preview"><TablePreview rows={o.tableRows}/></div>{/if}
               {#if o.kind==='Note'}<div class="pdf-text" use:fitNote={{active:!!o.autoFit,size:o.size}} style:font-size={o.size+'px'}>{#each textParts(o) as part}<span style={part.css}>{#if part.to && sheetFor(part.to)}<a href={sheetFor(part.to)}>{part.text}</a>{:else}{part.text}{/if}</span>{/each}</div>
               {:else if o.url}<small>{o.url}</small><small>{o.body}</small>

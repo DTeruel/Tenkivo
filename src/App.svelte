@@ -1523,7 +1523,7 @@
     else if(editing && o.kind==='Note'){inline=o.id;await tick();viewport.querySelector<HTMLElement>('[contenteditable]')?.focus();}
   }
   function frameColorFor(frame:Item){
-    return frame.frameBackground??colors[itemTags(frame)[0]]??'#808080';
+    return frame.frameBackground??'#808080';
   }
   function add(kind:Kind, extra:Partial<Item>={}) {
     if(!editing)return;
@@ -1971,6 +1971,14 @@
 {#snippet closePanel(close:()=>void,disabled=false)}
   <button type="button" class="close-panel" title="Close" aria-label="Close" {disabled} onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 {/snippet}
+{#snippet tagDots(tags:Department[], floating=false)}
+  {#if tags.length}
+    <span class="page-tags" class:floating-tags={floating} title={tags.map(d=>names[d]).join(', ')} aria-label={tags.map(d=>names[d]).join(', ')}>
+      {#each tags as d}<i style:background={colors[d]}></i>{/each}
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet backgroundPicker(object:Item, pickerId:string)}
   {@const field=object.kind==='Frame'?'frameBackground':'backgroundColor'}
   {@const color=object.kind==='Frame'?frameColorFor(object):object.backgroundColor??'#808080'}
@@ -2140,7 +2148,7 @@
         onpointerdown={e=>pageDown(e,p)} draggable={editing && !isTauri()} ondragstart={e=>{draggingPage=p.id;e.dataTransfer?.setData('studio/page',p.id);}}
         ondragend={()=>{treeDrop='';draggingPage='';}} ondragover={e=>{if(editing && draggingPage){e.preventDefault();treeDrop=p.id+' '+placement(e);}}}
         ondrop={e=>movePage(e,p)} oncontextmenu={e=>{focusArea='tree';context(e,p);}} data-page={p.id} onfocus={()=>focusArea='tree'} onclick={()=>{if(suppressPageClick){suppressPageClick=false;return;}focusArea='tree';void navigate(p);}}><span aria-hidden="true">{p.folder?'📁':'▧'}</span><span class="page-name">{p.name}</span></button>
-      <span class="page-tags" title={(pageTags.get(p.id)??[]).map(d=>names[d]).join(', ')}>{#each pageTags.get(p.id)??[] as d}<i style:background={colors[d]}></i>{/each}</span>
+      {@render tagDots(pageTags.get(p.id)??[])}
       {#if unreadCount}<button class="unread-comments" title="Read unread comments" aria-label={'Unread comments on '+p.name} onclick={()=>showComments(unreadComments(p)?p:p.items.find(o=>unreadComments(o))!)}>● {unreadCount}</button>{/if}
       {#if editorsByPage.get(p.id)?.length}
         {@const editors=editorsByPage.get(p.id)!}
@@ -2199,12 +2207,13 @@
           {@const headerColor=o.kind==='Frame'?(preview??frameColorFor(o)):(preview??o.backgroundColor)}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} ondblclick={e=>activate(o,e)}>
+          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} ondblclick={e=>activate(o,e)}>
             {#if o.kind==='Image' && o.attachment}<AttachmentImage project={path} attachment={o.attachment} name={o.name}/>{:else if o.kind==='Image'}<img draggable="false" src={o.source} alt={o.name} decoding="async"/>{/if}
             {#if o.drawing}<DrawingStroke drawing={o.drawing}/>{/if}
-            {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}
+            {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption"><span class="caption-title">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}
               onblur={()=>finishTitle(o,true)} onkeydown={e=>{if(e.key==='Enter' || e.key==='Escape'){e.preventDefault();e.stopPropagation();finishTitle(o,e.key==='Enter');}}}/>
-              {:else}{#if o.kind==='Frame'}▣　{:else if o.kind==='Page link'}↗　{/if}{o.name}{/if}{#if editing && active?.id===o.id && frameOnly===o.id}<small>Frame only</small>{/if}</div>{/if}
+              {:else}{#if o.kind==='Frame'}▣　{:else if o.kind==='Page link'}↗　{/if}{o.name}{/if}</span>{#if editing && active?.id===o.id && frameOnly===o.id}<small>Frame only</small>{/if}{@render tagDots(itemTags(o))}</div>
+            {:else}{@render tagDots(itemTags(o),true)}{/if}
             {#if o.kind==='Attachment' && o.attachment && media}
               <MediaPlayer kind={media} project={path} attachment={o.attachment} name={o.name} repo={onlineProject?.repo}/>
             {:else if o.kind==='Attachment'}<small>{o.attachment?.folder?'Folder':'File'} · {o.attachment?.local?'Project copy':'Linked original'}</small>{/if}

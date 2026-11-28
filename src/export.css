@@ -34,7 +34,7 @@
 .pdf-paper a {color:#245490}
 .pdf-window {position:relative;overflow:hidden}
 .pdf-world {position:absolute;transform-origin:0 0;isolation:isolate}
-.pdf-object {position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px solid;border-radius:8px}
+.pdf-object {position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px solid #aaa;border-radius:8px}
 .pdf-object.frame {border-style:dashed;z-index:-1}
 .pdf-object strong {padding:8px 12px 5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
 .pdf-object small,.pdf-text {padding:4px 12px 8px;overflow-wrap:anywhere}
