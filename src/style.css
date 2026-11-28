@@ -229,16 +229,23 @@ dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width
 .inspector-section fieldset,.inspector-file p { margin:0; min-width:0; }
 .thread-preview-title { display:flex; align-items:center; gap:6px; min-width:0; }
 .archived-label { margin-left:auto; flex:none; border:1px solid var(--line); border-radius:4px; padding:1px 4px; font-size:10px; }
-.background-picker { display:flex; align-items:end; gap:6px; margin-bottom:15px; }
+.background-picker { display:grid; gap:7px; margin-bottom:15px; }
+.background-controls { display:flex; align-items:end; gap:6px; }
+.background-presets { display:grid; grid-template-columns:repeat(6, 18px); gap:4px; }
+.background-presets button { width:18px; height:18px; padding:0; border-radius:4px; background:var(--swatch); }
+.background-presets button:hover:not(:disabled) { background:var(--swatch); outline:1px solid var(--ink); }
+.background-presets button[aria-pressed=true] { box-shadow:inset 0 0 0 2px var(--paper); }
 .background-picker label { min-width:0; margin:0; }
-.background-picker input[type=color],.background-picker button { height:32px; }
+.background-controls input[type=color],.background-controls button { height:32px; }
 .background-picker input[type=color] { padding:4px 7px; }
-.object:not(.frame):not(.drawing-object) { background:color-mix(in srgb,var(--object-tint, var(--paper)) 25%,var(--paper)); }
+.object:not(.frame):not(.drawing-object):not(.table-object) { background:color-mix(in srgb,var(--object-tint, var(--paper)) 25%,var(--paper)); }
 .object textarea { background:inherit; }
+.object.table-object { background:color-mix(in srgb,var(--table-header) 10%,transparent); --table-header:var(--table-color, light-dark(#e1e1e1, #414141)); }
+.object.table-object .caption { background:var(--table-header); color:var(--table-text, var(--ink)); padding-block:6px; }
 .object.frame { background:color-mix(in srgb,var(--frame-color) 10%,transparent); }
 .object.frame .caption { background:var(--frame-color); color:var(--frame-text); padding-block:6px; }
 .app-menu .background-picker { padding:4px 8px; margin:0; }
-.app-menu .background-picker button { width:auto; }
+.app-menu .background-controls button { width:auto; }
 .project-search-results { display:grid; gap:4px; min-height:0; overflow:auto; align-content:start; }
 .reference-result { display:grid; text-align:left; overflow-wrap:anywhere; }
 

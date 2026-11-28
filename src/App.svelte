@@ -27,6 +27,7 @@
   import { frameHeaderText, defaultCatalog, tagPresets, availablePresetTags, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
+  let backgroundPreview=$state<{item:Item;color:string}>();
   const framePalette=[
     '#4ea0ff','#ff785a','#51c78b','#b785ee','#edc450','#32bdc8',
     '#e66fa8','#9bb24e','#6876dc','#d58d42','#8c664e','#a1aebb',
@@ -1971,12 +1972,25 @@
   <button type="button" class="close-panel" title="Close" aria-label="Close" {disabled} onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 {/snippet}
 {#snippet backgroundPicker(object:Item)}
-        {@const field=object.kind==='Frame'?'frameBackground':'backgroundColor'}
-        <div class="background-picker">
-          <label>Background color<input type="color" disabled={!editing} value={object.kind==='Frame'?frameColorFor(object):object.backgroundColor??'#808080'}
-            onchange={e=>{object[field]=e.currentTarget.value;change();}}/></label>
-          <button disabled={!editing || !object[field]} onclick={()=>{delete object[field];change();}} aria-label="Reset background color">Reset</button>
-        </div>
+  {@const field=object.kind==='Frame'?'frameBackground':'backgroundColor'}
+  {@const color=object.kind==='Frame'?frameColorFor(object):object.backgroundColor??'#808080'}
+  <div class="background-picker" role="group" aria-label="Background color">
+    <div class="background-presets" role="group" aria-label="Background color presets">
+      {#each framePalette as preset}
+        <button type="button" title={preset} aria-label={'Use '+preset} aria-pressed={object[field]?.toLowerCase()===preset}
+          disabled={!editing} style:--swatch={preset}
+          onclick={()=>{backgroundPreview=undefined;object[field]=preset;change();}}></button>
+      {/each}
+    </div>
+    <div class="background-controls">
+      <label>Background color<input type="color" disabled={!editing} value={color}
+        oninput={e=>{backgroundPreview={item:object,color:e.currentTarget.value};}}
+        onblur={()=>{if(backgroundPreview?.item===object)backgroundPreview=undefined;}}
+        onchange={e=>{backgroundPreview=undefined;object[field]=e.currentTarget.value;change();}}/></label>
+      <button disabled={!editing || !object[field]} onclick={()=>{backgroundPreview=undefined;delete object[field];change();}}
+        aria-label="Reset background color">Reset</button>
+    </div>
+  </div>
 {/snippet}
 
 {#snippet imageTitle(image:Item)}
@@ -2164,10 +2178,12 @@
       <div class="world" style:transform={'translate('+tx+'px,'+ty+'px) scale('+zoom+')'}>
         {#each visible as o (o.id)}
           {@const destination=objectLink(o)}
-          {@const frameColor=o.kind==='Frame'?frameColorFor(o):undefined}
+          {@const preview=backgroundPreview?.item===o?backgroundPreview.color:undefined}
+          {@const frameColor=o.kind==='Frame'?(preview??frameColorFor(o)):undefined}
+          {@const tableColor=o.kind==='Table'?(preview??o.backgroundColor):undefined}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--object-tint={o.kind==='Note' || o.kind==='Table'?o.backgroundColor:undefined} style:--frame-color={frameColor} style:--frame-text={frameColor && frameHeaderText(frameColor)} ondblclick={e=>activate(o,e)}>
+          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:table-object={o.kind==='Table'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--object-tint={o.kind==='Note'?(preview??o.backgroundColor):undefined} style:--table-color={tableColor} style:--table-text={tableColor && frameHeaderText(tableColor)} style:--frame-color={frameColor} style:--frame-text={frameColor && frameHeaderText(frameColor)} ondblclick={e=>activate(o,e)}>
             {#if o.kind==='Image' && o.attachment}<AttachmentImage project={path} attachment={o.attachment} name={o.name}/>{:else if o.kind==='Image'}<img draggable="false" src={o.source} alt={o.name} decoding="async"/>{/if}
             {#if o.drawing}<DrawingStroke drawing={o.drawing}/>{/if}
             {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}

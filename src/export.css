@@ -53,3 +53,6 @@
 .pdf-object.frame { background:color-mix(in srgb,var(--frame-color) 10%,transparent); }
 .pdf-object.frame > strong { background:var(--frame-color); color:var(--frame-text); padding-block:6px; }
 .pdf-object.frame > strong a { color:inherit; }
+.pdf-object.table-object { background:color-mix(in srgb,var(--table-header) 10%,transparent); --table-header:var(--table-color, #e1e1e1); }
+.pdf-object.table-object > strong { background:var(--table-header); color:var(--table-text, #222); padding-block:6px; }
+.pdf-object.table-object > strong a { color:inherit; }
