@@ -840,15 +840,41 @@
     }
     return true;
   }
+  function pasteCanvasContent(text:string,images:File[],point?:{x:number;y:number}){
+    if(!images.length && !text.trim())return false;
+    if(!editing){status=readHint;return true;}
+    if(!images.length && pageClipboard && text===pageClipboard.selection.token){
+      void pastePage();return true;
+    }
+    if(folderIndex)return false;
+    if(images.length)void importImages(images,point?.x,point?.y);
+    else if(canvasClipboard && text===canvasClipboard.token)void pasteObjects(point);
+    else if(!insertUrl(text,point?.x,point?.y))add('Note',{...point,body:text});
+    return true;
+  }
   function paste(e:ClipboardEvent){
-    if(canvasClipboardBlocked(e.target))return;
-    const text=e.clipboardData?.getData('text/plain')??'';
-    if(pageClipboard && (!text || text===pageClipboard.selection.token)){
-      e.preventDefault();void pastePage();
-    }else if(canvasClipboard && (!text || text===canvasClipboard.token)){
-      e.preventDefault();
-      pasteObjects();
-    }else if(insertUrl(text))e.preventDefault();
+    if(canvasClipboardBlocked(e.target) || !e.clipboardData)return;
+    const data=e.clipboardData;
+    const images=[...data.files].filter(file=>file.type.startsWith('image/'));
+    const text=data.getData('text/plain') || data.getData('text/uri-list').split(/\r?\n/).find(line=>line && !line.startsWith('#')) || '';
+    if(pasteCanvasContent(text,images))e.preventDefault();
+  }
+  async function pasteFromMenu(point?:{x:number;y:number}){
+    menu=undefined;
+    const owner=project,currentPage=current;
+    try{
+      const clipboard=navigator.clipboard;
+      const items=await clipboard.read?.().catch(()=>[])??[];
+      const images:File[]=[];
+      for(const item of items){
+        const format=item.types.find(type=>['image/png','image/jpeg','image/gif','image/webp'].includes(type));
+        if(format)images.push(new File([await item.getType(format)],'Clipboard image',{type:format}));
+      }
+      const text=images.length?'':await clipboard.readText();
+      if(owner===project && currentPage===current)pasteCanvasContent(text,images,point);
+    }catch{
+      if(owner===project && currentPage===current)status='Use Ctrl+V or Command+V to paste clipboard content.';
+    }
   }
   let zoom = $state(1), tx = $state(30), ty = $state(40), width = $state(800), height = $state(600);
   let viewport=$state<HTMLDivElement>(null!), imageInput: HTMLInputElement, fileInput: HTMLInputElement, dialog: HTMLDialogElement;
@@ -2453,14 +2479,14 @@
           </details>
         {/key}
         <hr/>
-        <button disabled={!editing || (!canvasClipboard && !pageClipboard)} onclick={()=>pageClipboard?void pastePage():void pasteObjects(menu?.point)}>Paste</button>
+        <button disabled={!editing} onclick={()=>void pasteFromMenu(menu?.point)}>Paste</button>
         <hr/>
         <button onclick={()=>{menu=undefined;exporter.show(board);}}>Export page as PDF…</button>
       {:else}
         {#if menu.item}<button onclick={()=>showComments(menu!.item!)}>Conversations…</button>{/if}
         <button disabled={!picked.length} onclick={()=>copyObjects(false)}>Copy</button>
         <button disabled={!editing || !picked.length} onclick={()=>copyObjects(true)}>Cut</button>
-        <button disabled={!editing || (!canvasClipboard && !pageClipboard)} onclick={()=>pageClipboard?void pastePage():void pasteObjects()}>Paste</button>
+        <button disabled={!editing} onclick={()=>void pasteFromMenu()}>Paste</button>
         <hr/>
         <button onclick={()=>{fit();menu=undefined;}}>Focus selection</button>
         {@render departmentPicker()}
