@@ -243,3 +243,5 @@ dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width
 .folder-index h2 {margin:0;}
 .folder-entry {display:block;text-align:left;width:100%;padding:8px 10px;}
 .search-panel .panel-content {display:flex;flex-direction:column;gap:10px;}
+.table-preview {flex:1;min-height:0;overflow:hidden;margin:0 5px 5px;}
+dialog.table-dialog {width:min(820px,90vw);}

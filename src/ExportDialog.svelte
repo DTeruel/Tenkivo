@@ -1,5 +1,6 @@
 <script lang="ts">
   import {connectionPath,portPosition} from "./connections";
+  import TablePreview from './TablePreview.svelte';
   import DrawingStroke from "./DrawingStroke.svelte";
   import './export.css';
   import {tick} from 'svelte';
@@ -105,6 +106,7 @@
               {:else if o.kind==='Image' && o.showTitle===false}
                 {#if dest && sheetFor(dest)}<a class="pdf-image-link" href={sheetFor(dest)} aria-label={o.name}></a>{/if}
               {:else}<strong>{#if frameColor}<span aria-hidden="true">▣ </span>{/if}{#if dest && sheetFor(dest)}<a href={sheetFor(dest)}>{o.name}</a>{:else if o.url}<a href={o.url}>{o.name}</a>{:else}{o.name}{/if}</strong>{/if}
+              {#if o.kind==='Table' && o.tableRows}<div class="table-preview"><TablePreview rows={o.tableRows}/></div>{/if}
               {#if o.kind==='Note'}<div class="pdf-text" use:fitNote={{active:!!o.autoFit,size:o.size}} style:font-size={o.size+'px'}>{#each textParts(o) as part}<span style={part.css}>{#if part.to && sheetFor(part.to)}<a href={sheetFor(part.to)}>{part.text}</a>{:else}{part.text}{/if}</span>{/each}</div>
               {:else if o.url}<small>{o.url}</small><small>{o.body}</small>
               {:else if o.kind==='Attachment'}<small>{o.attachment?.folder?'Folder':'File'} · {o.attachment?.path.split(/[\\/]/).at(-1)}</small>

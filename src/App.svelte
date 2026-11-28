@@ -3,6 +3,8 @@
   import {connectionPath,portPosition,portSides} from './connections';
   import {collectSelection,preparePaste,remapLinks,type CanvasClipboard} from './canvasClipboard';
   import DrawingStroke from './DrawingStroke.svelte';
+  import TableEditor from './TableEditor.svelte';
+  import TablePreview from './TablePreview.svelte';
   import DockPanel from './DockPanel.svelte';
   import {canvasEdges,canvasDropTarget,type CanvasEdge} from './canvasDock';
   import ExportDialog from './ExportDialog.svelte';
@@ -733,7 +735,7 @@
     if(!editing)return;
     insertAt=menu?.point;menu=undefined;
     if(kind==='Drawing'){drawingMode=true;ids=[];inline='';return;}
-    if(kind==='Note' || kind==='Frame'){add(kind,insertAt);return;}
+    if(kind==='Note' || kind==='Frame' || kind==='Table'){add(kind,insertAt);return;}
     if(kind==='Page link'){linkPage=project.pages.find(p=>p.id!==current)?.id??current;ask('Add page link');return;}
     if(kind==='Web link'){linkUrl='';ask('Add web link');return;}
     if(!isTauri()){imageInput.click();return;}
@@ -1157,8 +1159,9 @@
       if(p.name.toLocaleLowerCase().includes(query))results.push({label:p.name,detail:p.folder?'Folder':'Page',to:{pageId:p.id}});
       for(const o of p.items){
         const index=o.kind==='Note'?o.body.toLocaleLowerCase().indexOf(query):-1;
-        if(o.name.toLocaleLowerCase().includes(query) || index>=0){
-          const excerpt=index>=0?' · '+o.body.slice(Math.max(0,index-24),index+query.length+40):'';
+        const cell=o.tableRows?.flat().find(text=>text.toLocaleLowerCase().includes(query));
+        if(o.name.toLocaleLowerCase().includes(query) || index>=0 || cell){
+          const excerpt=index>=0?' · '+o.body.slice(Math.max(0,index-24),index+query.length+40):cell?' · '+cell.slice(0,80):'';
           results.push({label:o.name,detail:p.name+' · '+o.kind+excerpt,to:{pageId:p.id,itemId:o.id}});
         }
       }
@@ -1517,6 +1520,7 @@
     const to=objectLink(o);
     if(to && (!editing || o.kind==='Page link'))await follow(to);
     else if(!editing)status=readHint;
+    else if(editing && o.kind==='Table' && o.tableRows){ids=[o.id];ask('Edit table');}
     else if(editing && o.kind==='Note'){inline=o.id;await tick();viewport.querySelector<HTMLElement>('[contenteditable]')?.focus();}
   }
   function frameColorFor(frame:Item){
@@ -1525,6 +1529,10 @@
   function add(kind:Kind, extra:Partial<Item>={}) {
     if(!editing)return;
     const o=item(kind,kind==='Note'?'New note':kind,(width/2-tx)/zoom-110,(height/2-ty)/zoom-60,{inheritDepartment:true,...extra});
+    if(kind==='Table'){
+      o.tableRows=Array.from({length:4},()=>Array<string>(4).fill(''));
+      o.w=440;o.h=190;
+    }
     if(kind==='Frame'){
       o.w=480;o.h=300;
       const frames=board.items.filter(item=>item.kind==='Frame');
@@ -1584,7 +1592,8 @@
   function newProject(){section='';
     creationError='';draftUsers=[];draftName='';draftDescription='';draftCatalog=[];selectedTagPreset='';ask('New project');
   }
-  function ask(type:string){dialogType=type;name='';dialog.showModal();}
+  let tableEditSession=$state(0);
+  function ask(type:string){if(type==='Edit table')tableEditSession++;dialogType=type;name='';dialog.showModal();}
   type UnsavedAction='exit'|'close'|'open'|'create'|'reload';
   type UnsavedChoice='save'|'discard'|'cancel';
   const unsavedLabels:Record<UnsavedAction,{action:string;save:string}> = {
@@ -2083,7 +2092,7 @@
   </div>
   <div class="workspace">
   <DockPanel name="Search" panelClass="search-panel" bind:side={searchSide} bind:open={searchOpen}>
-      <label>Search project<input type="search" placeholder="Pages, objects or note text" bind:this={searchInput} bind:value={searchQuery}
+      <label>Search project<input type="search" placeholder="Pages, objects, notes or cells" bind:this={searchInput} bind:value={searchQuery}
         onkeydown={e=>{if(e.key==='Enter' && searchResults.length && !e.isComposing){e.preventDefault();void follow(searchResults[0].to);}}}/></label>
       <div class="project-search-results">
         {#each searchResults as result}
@@ -2175,6 +2184,7 @@
               {:else if video}<button onclick={()=>playing=o.id}>▶ Play video</button>{/if}
               <small>↗ {webAddress(o.url)?.hostname}</small>{#if o.body}<div class="body">{o.body}</div>{/if}
             {/if}
+            {#if o.kind==='Table' && o.tableRows}<div class="table-preview"><TablePreview rows={o.tableRows}/></div>{/if}
             {#if o.kind==='Note'}
               {#if inline===o.id}
                 <div class="body rich-editor" contenteditable="plaintext-only" role="textbox" aria-multiline="true" aria-label="Edit note" tabindex="0"
@@ -2282,6 +2292,7 @@
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
       {#if active.kind==='Frame'}{@render frameBackgroundPicker(active)}{/if}
       {@render departmentPicker()}
+      {#if active.kind==='Table' && active.tableRows}<button onclick={()=>ask('Edit table')}>Edit table…</button>{/if}
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
         onselect={e=>active && remember(active,e.currentTarget)} oninput={e=>active && updateText(active,e.currentTarget)}></textarea></label>
@@ -2326,7 +2337,7 @@
           <details class="canvas-new-menu">
             <summary>New</summary>
             <div>
-              {#each ['Note','Image','Frame','Drawing','Page link','Web link',...(isTauri()?(onlineProject?['File']:['File','Folder']):[])] as kind}
+              {#each ['Note','Image','Frame','Drawing','Table','Page link','Web link',...(isTauri()?(onlineProject?['File']:['File','Folder']):[])] as kind}
                 <button disabled={!editing} onclick={()=>insert(kind)}>{kind}</button>
               {/each}
             </div>
@@ -2450,10 +2461,10 @@
       </div>
     {/if}
   </dialog>
-  <dialog bind:this={dialog} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
+  <dialog bind:this={dialog} class:table-dialog={dialogType==='Edit table'} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
-    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations'].includes(dialogType)}
+    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations','Edit table'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
     <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Conversations' && commentItem}
@@ -2496,6 +2507,15 @@
           </footer>
         {/if}
       </section>
+    {:else if dialogType==='Edit table' && editing && active?.tableRows}
+      {@const target=active}
+      {#key tableEditSession}
+      <TableEditor rows={active.tableRows} cancel={()=>dialog.close()} apply={rows=>{
+        target.tableRows=rows;
+        change();
+        dialog.close();
+      }}/>
+      {/key}
     {:else if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>

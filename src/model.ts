@@ -26,7 +26,7 @@ export function addTagPreset(catalog:DepartmentInfo[],preset:keyof typeof tagPre
   });
   return [...catalog,...newTags];
 }
-export type Kind = 'Note' | 'Image' | 'Frame' | 'Page link' | 'Attachment' | 'Web link' | 'Drawing';
+export type Kind = 'Note' | 'Image' | 'Frame' | 'Page link' | 'Attachment' | 'Web link' | 'Drawing' | 'Table';
 export interface Attachment {path:string;local:boolean;folder:boolean;shared?:{sha256:string;blob?:string}}
 export function mediaKind(attachment:Attachment){
   if(attachment.folder)return;
@@ -99,6 +99,7 @@ export function frameHeaderText(color:string){
   return red*0.2126+green*0.7152+blue*0.0722>0.179?'#000':'#fff';
 }
 export interface Item {
+  tableRows?:string[][];
   threads?:CommentThread[];
   styles?: {start:number;end:number;style:NoteStyle}[];
   drawing?:Drawing;
@@ -225,6 +226,11 @@ function validConnections(page:Page){
   }
   return true;
 }
+function validTable(rows:string[][]|undefined){
+  if(!Array.isArray(rows) || !rows.length || !Array.isArray(rows[0]) || !rows[0].length)return false;
+  const columns=rows[0].length;
+  return rows.every(row=>Array.isArray(row) && row.length===columns && row.every(cell=>typeof cell==='string'));
+}
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
@@ -243,8 +249,9 @@ export function validProject(value: unknown): value is Project {
       new Set(v.items.map(o=>o?.id)).size === v.items.length &&
       validThreads(v.threads) &&
       (v.connections===undefined || validConnections(v)) &&
-      v.items.every(o=>o && ['Note','Image','Frame','Page link','Web link','Attachment','Drawing'].includes(o.kind) && typeof o.id === 'string' &&
+      v.items.every(o=>o && ['Note','Image','Frame','Page link','Web link','Attachment','Drawing','Table'].includes(o.kind) && typeof o.id === 'string' &&
         (o.departments===undefined || (Array.isArray(o.departments) && o.departments.every(d=>typeof d==='string'))) &&
+        (o.kind!=='Table' || validTable(o.tableRows)) &&
         (o.kind!=='Drawing' || validDrawing(o.drawing)) &&
         (o.frameBackground===undefined || (typeof o.frameBackground==='string' && /^#[a-f0-9]{6}$/i.test(o.frameBackground))) &&
         (o.showTitle===undefined || typeof o.showTitle==='boolean') &&
