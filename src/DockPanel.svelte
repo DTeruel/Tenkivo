@@ -39,7 +39,7 @@
 
 <svelte:window onpointermove={move} onpointerup={finish} onpointercancel={cancel} onblur={cancel}/>
 <aside bind:this={panel} class={panelClass} class:collapsed={!open} aria-label={name}
-  style:order={(side==='left'?1:4)+(panelClass==='sidebar'?0:1)}>
+  style:order={side==='left'?(panelClass==='sidebar'?1:2):(panelClass==='sidebar'?4:panelClass==='inspector'?5:6)}>
   <div class="panel-head">
     <button class="panel-grip" title={'Drag '+name+' to either edge, or use the arrow keys'} aria-label={'Move '+name}
       onpointerdown={begin} onkeydown={key}>

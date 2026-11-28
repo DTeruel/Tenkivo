@@ -1137,11 +1137,10 @@
     return o.link ?? (o.kind==='Page link' && o.target ? {pageId:o.target} : undefined);
   }
   let searchQuery=$state('');
-  let searchOpen=$state(localStorage.getItem('search-open')==='true');
-  let searchSide=$state(localStorage.getItem('search-side')==='right'?'right':'left');
+  let searchOpen=$state(false);
+  let searchSide=$state(localStorage.getItem('search-side-v2')==='left'?'left':'right');
   $effect(()=>{
-    localStorage.setItem('search-open',String(searchOpen));
-    localStorage.setItem('search-side',searchSide);
+    localStorage.setItem('search-side-v2',searchSide);
   });
   let searchInput=$state<HTMLInputElement>();
   async function openSearch(){
@@ -2070,7 +2069,6 @@
         </details>
       {/if}
 
-    <button onclick={openSearch} title="Search project (Ctrl / Cmd + F)">Search</button>
     </nav>
     <div class="app-actions">
       {@render gitHubAccountButton()}
