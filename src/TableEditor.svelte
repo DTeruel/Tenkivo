@@ -52,29 +52,47 @@
     if(axis==='row')row=index;else column=index;
   }
 
-  function startDrag(event:DragEvent,axis:Axis,index:number){
-    if(!event.dataTransfer)return;
-    event.stopPropagation();
-    event.dataTransfer.effectAllowed='move';
-    event.dataTransfer.setData('application/x-tenkivo-table-track',axis);
+  let gripPointer:{id:number;x:number;y:number;track:Track;grips:HTMLElement[]}|undefined;
+  let suppressGripClick=false;
+
+  function grabGrip(event:PointerEvent,axis:Axis,index:number){
+    if(event.button!==0)return;
+    const grip=event.currentTarget as HTMLButtonElement;
+    const grips=Array.from(grip.closest('.track-tools')!.querySelectorAll<HTMLElement>('.grip'));
+    gripPointer={id:event.pointerId,x:event.clientX,y:event.clientY,track:{axis,index},grips};
+    suppressGripClick=false;
+    grip.setPointerCapture(event.pointerId);
+  }
+
+  function moveGrip(event:PointerEvent){
+    const pointer=gripPointer;
+    if(!pointer || pointer.id!==event.pointerId || pointer.grips.length<2)return;
+    const centers=pointer.grips.map(grip=>{
+      const rect=grip.getBoundingClientRect();
+      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+    });
+    const first=centers[0], last=centers[centers.length-1];
+    const length=Math.hypot(last.x-first.x,last.y-first.y);
+    if(!length)return;
+    const displacement=((event.clientX-pointer.x)*(last.x-first.x)+(event.clientY-pointer.y)*(last.y-first.y))/length;
+    if(!dragging && Math.abs(displacement)<4)return;
+    suppressGripClick=true;
     menu=undefined;
-    dragging={axis,index};
-    dropIndex=index;
+    dragging=pointer.track;
+    const target=pointer.track.index+Math.round(displacement*(centers.length-1)/length);
+    dropIndex=Math.max(0,Math.min(centers.length-1,target));
   }
 
-  function endDrag(){dragging=undefined;dropIndex=undefined;}
-
-  function trackDrop(event:DragEvent,axis:Axis,index:number){
-    if(!dragging || dragging.axis!==axis)return;
-    event.preventDefault();
-    event.stopPropagation();
-    if(event.dataTransfer)event.dataTransfer.dropEffect='move';
-    dropIndex=index;
-    if(event.type==='drop'){
-      changeTrack(axis,dragging.index,'move',index);
-      endDrag();
+  function releaseGrip(event:PointerEvent){
+    if(gripPointer?.id!==event.pointerId)return;
+    if(event.type==='pointerup'){
+      moveGrip(event);
+      if(dragging && dropIndex!==undefined)changeTrack(dragging.axis,dragging.index,'move',dropIndex);
     }
+    endDrag();
   }
+
+  function endDrag(){gripPointer=undefined;dragging=undefined;dropIndex=undefined;}
 
   function focusCell(node:HTMLTextAreaElement){node.focus();node.setSelectionRange(node.value.length,node.value.length);}
 </script>
@@ -90,13 +108,14 @@
         <div class="track-tools" class:columns={axis==='column'} class:rows={axis==='row'} role="group" aria-label={axis==='row'?'Rows':'Columns'}>
           {#each Array(count(axis)) as _,index}
             <div class="track" class:target={dragging?.axis===axis && dropIndex===index}
-              role="group" aria-label={axis+' '+(index+1)}
-              ondragover={event=>trackDrop(event,axis,index)} ondrop={event=>trackDrop(event,axis,index)}>
+              role="group" aria-label={axis+' '+(index+1)}>
               <button class="insert" title={'Insert '+axis+' before '+(index+1)} aria-label={'Insert '+axis+' before '+(index+1)} onclick={()=>changeTrack(axis,index,'insert')}>+</button>
-              <button class="grip" class:current={menu?.axis===axis && menu.index===index} draggable="true"
+              <button class="grip" class:current={menu?.axis===axis && menu.index===index}
                 title={'Drag to move '+axis+' '+(index+1)+', or click for actions'} aria-label={'Actions for '+axis+' '+(index+1)}
                 aria-expanded={menu?.axis===axis && menu.index===index}
-                ondragstart={event=>startDrag(event,axis,index)} ondragend={endDrag} onclick={()=>openMenu(axis,index)}>⠿</button>
+                onpointerdown={event=>grabGrip(event,axis,index)} onpointermove={moveGrip} onpointerup={releaseGrip}
+                onpointercancel={releaseGrip} onlostpointercapture={releaseGrip}
+                onclick={event=>{if(!suppressGripClick || event.detail===0)openMenu(axis,index);}}>⠿</button>
               {#if menu?.axis===axis && menu.index===index}
                 <div class="track-menu" role="group" aria-label={axis+' actions'}>
                   <button disabled={index===0} onclick={()=>changeTrack(axis,index,'move',index-1)}>Move {axis==='row'?'up':'left'}</button>
@@ -116,8 +135,7 @@
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <td class:chosen={selected && !menu && !dragging && row===r && column===c}
           class:highlighted={selected && (menu?.axis==='row' && menu.index===r || menu?.axis==='column' && menu.index===c || dragging?.axis==='row' && dropIndex===r || dragging?.axis==='column' && dropIndex===c)}
-          ondragover={event=>{if(dragging)trackDrop(event,dragging.axis,dragging.axis==='row'?r:c);}}
-          ondrop={event=>{if(dragging)trackDrop(event,dragging.axis,dragging.axis==='row'?r:c);}}
+
           onpointerdown={e=>{if(e.button===0){menu=undefined;if(row!==r || column!==c){typing=false;row=r;column=c;}}}}
           ondblclick={e=>{if(selected){e.stopPropagation();row=r;column=c;typing=true;}}}>
           {#if selected && typing && row===r && column===c}
