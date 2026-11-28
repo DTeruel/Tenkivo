@@ -405,11 +405,35 @@
     change();
     dialog.close();
   }
+  const selectedRoots=$derived(picked.filter(o=>!o.parent || !ids.includes(o.parent)));
+  function shiftSelectionRoot(object:Item,axis:'x'|'y',distance:number){
+    object[axis]+=distance;
+    for(const child of board.items)if(child.parent===object.id)child[axis]+=distance;
+  }
   function align(axis:'x'|'y',factor:number){
     if(!editing || !box)return;
-    const roots=picked.filter(o=>!o.parent || !ids.includes(o.parent));
+    const roots=selectedRoots;
     const group=enclosure(roots),size=axis==='x'?'w':'h';
-    for(const o of roots){const b=bounds(o),d=group[axis]+group[size]*factor-b[axis]-b[size]*factor;o[axis]+=d;for(const c of board.items)if(c.parent===o.id)c[axis]+=d;}
+    for(const o of roots){
+      const b=bounds(o);
+      shiftSelectionRoot(o,axis,group[axis]+group[size]*factor-b[axis]-b[size]*factor);
+    }
+    change();menu=undefined;
+  }
+  function distribute(axis:'x'|'y'){
+    if(!editing || selectedRoots.length<3)return;
+    const size=axis==='x'?'w':'h';
+    const ordered=selectedRoots.map(object=>({object,box:bounds(object)}))
+      .sort((a,b)=>a.box[axis]-b.box[axis]);
+    const first=ordered[0].box,last=ordered[ordered.length-1].box;
+    const span=last[axis]+last[size]-first[axis];
+    const occupied=ordered.reduce((total,entry)=>total+entry.box[size],0);
+    const gap=(span-occupied)/(ordered.length-1);
+    let position=first[axis]+first[size]+gap;
+    for(const {object,box} of ordered.slice(1,-1)){
+      shiftSelectionRoot(object,axis,position-box[axis]);
+      position+=box[size]+gap;
+    }
     change();menu=undefined;
   }
   let editing = $state(false), inline = $state(''), dirty = $state(false), busy = $state(false);
@@ -2414,6 +2438,8 @@
         {#if active?.attachment || active?.url}<button onclick={()=>{menu=undefined;void openResource(active!);}}>Open</button>{/if}
         {#if picked.length===1}<button disabled={!editing} onclick={()=>{menu=undefined;chooseLink();}}>Link object…</button>{/if}
         {#if picked.length>1}
+          <details class="object-departments">
+          <summary>Alignment</summary>
           {#each ['Horizontal','Vertical'] as axis}
             <div class="align-group" role="group" aria-label={axis+' alignment'}><small>{axis} alignment</small><div>
               {#each [0,.5,1] as factor,i}
@@ -2427,6 +2453,14 @@
               {/each}
             </div></div>
           {/each}
+          </details>
+          <details class="object-departments">
+            <summary>Distribution</summary>
+            <div class="align-group">
+              <button disabled={!editing || selectedRoots.length<3} onclick={()=>distribute('x')}>Horizontal</button>
+              <button disabled={!editing || selectedRoots.length<3} onclick={()=>distribute('y')}>Vertical</button>
+            </div>
+          </details>
         {/if}
         <button disabled={!editing} onclick={()=>removeObjects()}>Delete selection</button>
       {/if}
