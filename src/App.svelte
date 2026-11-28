@@ -1792,7 +1792,7 @@
           <button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('save');}}>Save as Online…</button>
         {/if}
         <hr/>
-        <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export…</button>
+        <button disabled={busy} onclick={()=>{fileMenu.open=false;exporter.show();}}>Export as PDF…</button>
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
       </div></details>
