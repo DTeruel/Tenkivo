@@ -3,7 +3,7 @@
 <meta name="description" content="Design games and apps on a visual canvas. Play audio and video alongside your notes, and filter pages and references by tag.">
 <title>Tenkivo · A workspace for project design</title><link rel="icon" type="image/png" href="tenkivo.png"><link rel="stylesheet" href="site.css"></head>
 <body><header><a class="brand" href="#top"><img src="tenkivo.png" alt="" width="36" height="36">Tenkivo</a><nav><a href="#workspace">Workspace</a><a href="#release">Release notes</a></nav></header>
-<main id="top"><section class="hero"><div><p class="eyebrow">Project design for Windows</p><h1>Design your<br><em>project.</em></h1>
+<main id="top"><section class="hero"><div><p class="eyebrow">Project design workspace</p><h1>Design your<br><em>project.</em></h1>
 <p class="intro">Plan a game or an app on a visual canvas. Play audio and video alongside sketches and design notes, then filter by tag to focus on the work you’re reviewing.</p>
 <a id="download" class="button" href="https://github.com/DTeruel/Tenkivo/releases">View GitHub releases</a><p id="availability">Windows x64 · Portable executable</p></div>
 <figure><a href="workspace.png" aria-label="View full workspace screenshot"><img src="workspace.png" alt="The Windows app displaying a framed landscape reference board, page tree and object inspector."></a></figure></section>
@@ -20,6 +20,12 @@
 <footer>Tenkivo <a href="https://github.com/DTeruel/Tenkivo">Project repository</a></footer>
 <script>
 fetch('https://api.github.com/repos/DTeruel/Tenkivo/releases/latest').then(r=>r.ok?r.json():null).then(release=>{
+  const mac=release?.assets?.find(a=>a.name==='Tenkivo-macOS.zip');
+  if(mac?.browser_download_url.startsWith('https://github.com/DTeruel/Tenkivo/releases/download/')){
+    const link=document.createElement('a');
+    link.className='button';link.href=mac.browser_download_url;link.textContent='Download for macOS';
+    document.getElementById('download').after(' ',link);
+  }
   const asset=release?.assets?.find(a=>a.name==='Tenkivo.exe') ?? release?.assets?.find(a=>a.name==='GameDesignStudio.exe');
   if(asset && asset.browser_download_url.startsWith('https://github.com/DTeruel/Tenkivo/releases/download/')){
     const button=document.getElementById('download');button.href=asset.browser_download_url;button.textContent='Download for Windows';

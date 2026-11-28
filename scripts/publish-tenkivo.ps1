@@ -34,7 +34,7 @@ function Get-ReleaseNotes {
                 if ($entries.Count -gt 0) { $entries } else { $subject }
             }
         })
-    if ($changes.Count -eq 0) { $changes = @('Rebuilt the Windows portable package.') }
+    if ($changes.Count -eq 0) { $changes = @('Rebuilt the Windows and macOS packages.') }
 
     $changes | ForEach-Object { "- $($_.Trim())" }
 }
@@ -124,7 +124,7 @@ try {
     if (!$notesText) { throw 'Release notes are required.' }
 
     Write-Host ""
-    Write-Host "Publish Tenkivo $tag to $repo as a public stable Windows release."
+    Write-Host "Publish Tenkivo $tag to $repo as a stable Windows and macOS release."
     Write-Host "Release notes:"
     Write-Host $notesText
     Invoke-Git @('log', '--oneline', 'FETCH_HEAD..HEAD') | Out-Host

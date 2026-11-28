@@ -1,4 +1,4 @@
-name: Publish Tenkivo for Windows
+name: Publish Tenkivo
 
 on:
   push:
@@ -13,7 +13,45 @@ permissions:
   contents: write
 
 jobs:
+  macos:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Build universal macOS application
+        env:
+          TENKIVO_GITHUB_CLIENT_ID: ${{ vars.TENKIVO_GITHUB_CLIENT_ID }}
+        run: |
+          rustup update stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          npm install --global pnpm@11.25.0
+          pnpm install --frozen-lockfile
+          pnpm desktop build --target universal-apple-darwin --bundles app
+          git diff --exit-code -- src-tauri/Cargo.lock
+          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/Tenkivo.app"
+          plist="$app/Contents/Info.plist"
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$plist")
+          test "v$version" = "$GITHUB_REF_NAME"
+          binary=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
+          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/$binary"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --strict --deep "$app"
+          ditto -c -k --keepParent --sequesterRsrc "$app" "$RUNNER_TEMP/Tenkivo-macOS.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: ${{ runner.temp }}/Tenkivo-macOS.zip
+          if-no-files-found: error
+
   portable:
+    needs: macos
     runs-on: windows-2025
     defaults:
       run:
@@ -71,6 +109,11 @@ jobs:
           if ($binary.Length -gt 128MB) { throw 'Executable exceeds the updater download limit.' }
           Copy-Item -LiteralPath $binary.FullName -Destination "$env:RUNNER_TEMP/Tenkivo.exe"
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-universal
+          path: ${{ runner.temp }}
+
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -87,17 +130,19 @@ jobs:
             gh release create $tag --repo $repo --verify-tag --draft --title "Tenkivo $tag" --notes-file "$env:RUNNER_TEMP/tenkivo-release-notes.md"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" --repo $repo --clobber
+          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" "$env:RUNNER_TEMP/Tenkivo-macOS.zip" --repo $repo --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $releaseId = gh release view $tag --repo $repo --json databaseId --jq '.databaseId'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assetsJson = gh api "repos/$repo/releases/$releaseId/assets"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assets = $assetsJson | ConvertFrom-Json
-          $local = Get-FileHash -LiteralPath "$env:RUNNER_TEMP/Tenkivo.exe" -Algorithm SHA256
-          $asset = $assets | Where-Object name -CEQ 'Tenkivo.exe'
-          if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$($local.Hash)") {
-            throw 'GitHub did not report the expected SHA-256 for Tenkivo.exe.'
+          foreach ($name in 'Tenkivo.exe', 'Tenkivo-macOS.zip') {
+            $local = Get-FileHash -LiteralPath "$env:RUNNER_TEMP/$name" -Algorithm SHA256
+            $asset = $assets | Where-Object name -CEQ $name
+            if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$($local.Hash)") {
+              throw "GitHub did not report the expected SHA-256 for $name."
+            }
           }
           $latest = gh release list --repo $repo --exclude-drafts --exclude-pre-releases --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

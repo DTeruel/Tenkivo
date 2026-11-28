@@ -88,6 +88,10 @@ fn lookup() -> Result<Lookup, String> {
             "Running version {current}. GitHub's latest stable release is {version}."
         )));
     }
+    #[cfg(target_os = "macos")]
+    let asset = release.assets.iter().find(|a| a.name == "Tenkivo-macOS.zip")
+        .ok_or_else(|| format!("Release {version} has no macOS application."))?;
+    #[cfg(not(target_os = "macos"))]
     let asset = release
         .assets
         .iter()
