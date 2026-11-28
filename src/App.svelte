@@ -1971,10 +1971,26 @@
 {#snippet closePanel(close:()=>void,disabled=false)}
   <button type="button" class="close-panel" title="Close" aria-label="Close" {disabled} onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 {/snippet}
-{#snippet backgroundPicker(object:Item)}
+{#snippet backgroundPicker(object:Item, pickerId:string)}
   {@const field=object.kind==='Frame'?'frameBackground':'backgroundColor'}
   {@const color=object.kind==='Frame'?frameColorFor(object):object.backgroundColor??'#808080'}
-  <div class="background-picker" role="group" aria-label="Background color">
+  <div class="background-picker">
+    <button type="button" class="background-trigger" popovertarget={pickerId} onclick={event=>{
+      const popup=document.getElementById(pickerId);
+      if(!popup)return;
+      const anchor=event.currentTarget.getBoundingClientRect();
+      popup.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-198))+'px';
+      if(anchor.bottom+146<=window.innerHeight){
+        popup.style.top=anchor.bottom+4+'px';
+        popup.style.bottom='auto';
+      }else{
+        popup.style.top='auto';
+        popup.style.bottom=window.innerHeight-anchor.top+4+'px';
+      }
+    }}>
+      <span class="background-sample" style:--swatch={backgroundPreview?.item===object?backgroundPreview.color:color} aria-hidden="true"></span>Background color
+    </button>
+    <div class="background-options" id={pickerId} popover="auto">
     <div class="background-presets" role="group" aria-label="Background color presets">
       {#each framePalette as preset}
         <button type="button" title={preset} aria-label={'Use '+preset} aria-pressed={object[field]?.toLowerCase()===preset}
@@ -1983,12 +1999,13 @@
       {/each}
     </div>
     <div class="background-controls">
-      <label>Background color<input type="color" disabled={!editing} value={color}
+      <label>Custom color<input type="color" disabled={!editing} value={color}
         oninput={e=>{backgroundPreview={item:object,color:e.currentTarget.value};}}
         onblur={()=>{if(backgroundPreview?.item===object)backgroundPreview=undefined;}}
         onchange={e=>{backgroundPreview=undefined;object[field]=e.currentTarget.value;change();}}/></label>
       <button disabled={!editing || !object[field]} onclick={()=>{backgroundPreview=undefined;delete object[field];change();}}
         aria-label="Reset background color">Reset</button>
+    </div>
     </div>
   </div>
 {/snippet}
@@ -2304,7 +2321,7 @@
       <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
       <label>Title<input bind:value={active.name} oninput={change}/></label>
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
-      {#if ['Frame','Note','Table'].includes(active.kind)}{@render backgroundPicker(active)}{/if}
+      {#if ['Frame','Note','Table'].includes(active.kind)}{@render backgroundPicker(active,'inspector-background')}{/if}
       {@render departmentPicker()}
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
@@ -2368,7 +2385,7 @@
         <hr/>
         <button onclick={()=>{fit();menu=undefined;}}>Focus selection</button>
         {@render departmentPicker()}
-        {#if menu.item && ['Frame','Note','Table'].includes(menu.item.kind)}{@render backgroundPicker(menu.item)}{/if}
+        {#if menu.item && ['Frame','Note','Table'].includes(menu.item.kind)}{@render backgroundPicker(menu.item,'context-background')}{/if}
         {#if active?.kind==='Image'}{@render imageTitle(active)}{/if}
         {#if active?.attachment || active?.url}<button onclick={()=>{menu=undefined;void openResource(active!);}}>Open</button>{/if}
         {#if picked.length===1}<button disabled={!editing} onclick={()=>{menu=undefined;chooseLink();}}>Link object…</button>{/if}
