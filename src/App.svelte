@@ -53,7 +53,33 @@
   const initial:Project={version:1,name:'',pages:[page('Overview')]};
   let welcome=$state(true),launching=$state(false),welcomeError=$state(''),creationError=$state('');
   let startup=$state(localStorage.getItem('studio-startup')??'welcome');
-  let projectOpeningMode=$state(localStorage.getItem('studio-project-opening-mode')==='edit'?'edit':'read');
+  type ProjectOpeningMode='read'|'edit';
+  let projectOpeningMode=$state<ProjectOpeningMode>(localStorage.getItem('studio-project-opening-mode')==='edit'?'edit':'read');
+  let openingModeDialog:HTMLDialogElement;
+  let draftOpeningMode=$state<ProjectOpeningMode>('read');
+  let hideOpeningModePrompt=$state(false);
+  let openingModePromptShown=false;
+  function setProjectOpeningMode(mode:ProjectOpeningMode){
+    projectOpeningMode=mode;
+    localStorage.setItem('studio-project-opening-mode',mode);
+  }
+  function requestEditing(){
+    const canChooseOpeningMode=!onlineProject || (onlineIdentity && onlineProject.writable);
+    if(canChooseOpeningMode && !openingModePromptShown && localStorage.getItem('studio-hide-opening-mode-prompt')!=='true'){
+      openingModePromptShown=true;
+      draftOpeningMode=projectOpeningMode;
+      hideOpeningModePrompt=false;
+      openingModeDialog.showModal();
+      return;
+    }
+    selectEditor();
+  }
+  function finishOpeningModePrompt(apply:boolean){
+    if(apply)setProjectOpeningMode(draftOpeningMode);
+    if(apply || hideOpeningModePrompt)localStorage.setItem('studio-hide-opening-mode-prompt','true');
+    openingModeDialog.close();
+    selectEditor();
+  }
   let openingEditPending=false;
   type Recent={name:string;path:string};
   function readRecent():Recent[]{
@@ -1136,7 +1162,7 @@
     dirty=entry!==savedRevision || JSON.stringify(pageHistory)!==JSON.stringify(savedRevision?.doc.pageHistory);status=direction<0?'Undone':'Redone';
   }
   const readHint='Read mode is on. Press E to enable editing.';
-  function toggleEdit() { openingEditPending=false;stopDrawing();wire=undefined;selectedConnection='';if(!editing){selectEditor();return;} frameOnly='';editing=false;editorId=''; if(status===readHint)status='';inline='';gesture=undefined;liveBox=undefined;drag=undefined; }
+  function toggleEdit() { openingEditPending=false;stopDrawing();wire=undefined;selectedConnection='';if(!editing){requestEditing();return;} frameOnly='';editing=false;editorId=''; if(status===readHint)status='';inline='';gesture=undefined;liveBox=undefined;drag=undefined; }
   function fit(objects: Item[] = picked.length ? picked : board.items.filter(o=>matches(itemTags(o),filters))) {
     if (!objects.length) {zoom=1;tx=30;ty=40;return;}
     const boxes=objects.map(bounds);
@@ -2062,10 +2088,27 @@
       <button onclick={()=>finishUnsaved('save')}>{unsavedLabels[unsavedAction].save}</button>
     </div>
   </dialog>
+  <dialog bind:this={openingModeDialog} aria-labelledby="opening-mode-title" oncancel={event=>{event.preventDefault();finishOpeningModePrompt(false);}}>
+    <h2 id="opening-mode-title">How should projects open?</h2>
+    <p>You can switch modes at any time with <kbd>E</kbd>.</p>
+    <form onsubmit={event=>{event.preventDefault();finishOpeningModePrompt(true);}}>
+      <label>Open projects in
+        <select bind:value={draftOpeningMode}>
+          <option value="read">Read mode</option>
+          <option value="edit">Edit mode</option>
+        </select>
+      </label>
+      <label class="opening-mode-opt-out"><input type="checkbox" bind:checked={hideOpeningModePrompt}/> Don’t show this again</label>
+      <div class="dialog-actions">
+        <button type="button" onclick={()=>finishOpeningModePrompt(false)}>Close</button>
+        <button type="submit">Apply</button>
+      </div>
+    </form>
+  </dialog>
   <dialog class="settings" bind:this={settings}>
     {@render closePanel(()=>settings.close())}<h2>Settings</h2>
     {#if isTauri()}<label>On startup<select bind:value={startup} onchange={()=>localStorage.setItem('studio-startup',startup)}><option value="welcome">Show welcome screen</option><option value="last">Reopen last project</option></select></label>{/if}
-    <label>Open projects in<select bind:value={projectOpeningMode} onchange={()=>localStorage.setItem('studio-project-opening-mode',projectOpeningMode)}>
+    <label>Open projects in<select value={projectOpeningMode} onchange={event=>setProjectOpeningMode(event.currentTarget.value==='edit'?'edit':'read')}>
       <option value="read">Read mode</option><option value="edit">Edit mode</option>
     </select></label>
     <h3>Appearance</h3>

@@ -121,6 +121,8 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .studio dialog:has(.close-panel)>h2 {padding-right:28px}
 .dialog-actions {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:16px}
 .dialog-actions button {max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.opening-mode-opt-out {display:flex;align-items:center;gap:8px}
+.opening-mode-opt-out input {width:auto;margin:0}
 .online-dialog-footer {padding-top:12px;border-top:1px solid var(--line)}
 .unsaved-actions {justify-content:space-between}
 
