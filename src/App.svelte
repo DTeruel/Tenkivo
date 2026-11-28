@@ -290,7 +290,7 @@
   }
   function setLimit(n:number){historyLimit=normalizeLimit(n);localStorage.setItem('navigation-limit',String(historyLimit));trimHistory();}
   function view(){return {page:current,x:tx,y:ty,zoom,ids:[...ids]};}
-  function resetViews(){wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
+  function resetViews(){modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
   function rememberView(){if(cursor>=0)history[cursor]=view();}
   function travel(step:number){
     if(historyMenu)historyMenu.open=false;
@@ -411,6 +411,13 @@
   type DiscoveredProject=Pick<OnlineProject,'repo'|'writable'>;
   let account=$state<GitHubAccount>(),onlineProject=$state<OnlineProject>();
   const presence=new PagePresence();
+  const savedPresenceInterval=Number(localStorage.getItem('tenkivo-presence-seconds'));
+  let presenceSeconds=$state([15,30,60].includes(savedPresenceInterval)?savedPresenceInterval:30);
+  let modifiedPage=$state('');
+  $effect(()=>presence.start(presenceSeconds));
+  $effect(()=>{
+    if(!editing || modifiedPage!==current)modifiedPage='';
+  });
   let signingOut=$state(false);
   const editorsByPage=$derived.by(()=>{
     const pages=new Map<string,PageEditor[]>();
@@ -424,7 +431,7 @@
   $effect(()=>{
     const repo=onlineProject?.repo, branch=onlineProject?.branch, accountId=account?.id;
     const target=repo && branch && accountId && !signingOut
-      ? {repo,branch,accountId,page:editing && onlineProject?.writable?current:null}
+      ? {repo,branch,accountId,page:editing && onlineProject?.writable && modifiedPage===current?current:null}
       : null;
     untrack(()=>presence.setTarget(target));
   });
@@ -1182,7 +1189,10 @@
       const oldPages=new Map([...previous.pages,...previous.trash??[]].map(p=>[p.id,p]));
       for(const p of [...project.pages,...project.trash??[]]){
         const old=oldPages.get(p.id);
-        if(!old || JSON.stringify(pageSnapshot(p))!==JSON.stringify(pageSnapshot(old)))changedBy.set(p.id,{...editor});
+        if(!old || JSON.stringify(pageSnapshot(p))!==JSON.stringify(pageSnapshot(old))){
+          changedBy.set(p.id,{...editor});
+          if(onlineProject && editing && p.id===current)modifiedPage=current;
+        }
       }
     }
     const {pageHistory:_,...editable}=project;
@@ -1666,7 +1676,7 @@
       resetOpeningModePrompt();
       openNextProjectInReadMode=true;
     }).catch(()=>{}):undefined;
-    const stopPresence=presence.start();
+
     let diagnosticsTimer:ReturnType<typeof setInterval>|undefined;
     let collectingDiagnostics=false;
     const collect=()=>{
@@ -1734,7 +1744,7 @@
     }).catch(error=>{recordError('Window close listener',error);return undefined;}):undefined;
     if(!isTauri())window.addEventListener('beforeunload',before);
     return ()=>{
-      stopPresence();
+      presence.setTarget(null);
       window.removeEventListener('focus',refresh);updateChecksActive=false;clearTimeout(updateTimer);++signInAttempt;clearTimeout(signInTimer);++restoreAttempt;++discoveryAttempt;if(restoreFrame!==undefined)cancelAnimationFrame(restoreFrame);clearInterval(diagnosticsTimer);void listener?.then(stop=>stop?.()).catch(error=>recordError('Drag and drop listener',error));window.removeEventListener('beforeunload',before);
       void closeListener?.then(stop=>stop?.()).catch(error=>recordError('Window close listener',error));
     };
@@ -2219,6 +2229,9 @@
     </select></label>
     <h3>Appearance</h3>
     <label>Theme<select aria-label="Appearance" bind:value={theme} onchange={()=>localStorage.setItem('studio-theme',theme)}><option>System</option><option>Light</option><option>Dark</option></select></label>
+    <label>Online editor presence refresh<select bind:value={presenceSeconds} onchange={e=>localStorage.setItem('tenkivo-presence-seconds',e.currentTarget.value)}>
+      {#each [15,30,60] as seconds}<option value={seconds}>{seconds} seconds</option>{/each}
+    </select></label>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
     <h3>Canvas Snapping</h3><p>Hold Ctrl while dragging. Set a step to zero to disable snapping for that transform.</p>
     <div class="snap-fields">

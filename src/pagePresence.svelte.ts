@@ -4,7 +4,7 @@ type Scope={repo:string;branch:string;accountId:number};
 type Target=Scope & {page:string|null};
 export type PageEditor={page:string;login:string;user_id:number;expires:number};
 
-const pollInterval=12_000;
+
 const renewalInterval=30_000;
 
 function sameScope(a:Scope|null,b:Scope|null){
@@ -26,9 +26,9 @@ export class PagePresence {
     void this.poll();
   }
 
-  start(){
-    const timer=setInterval(()=>void this.poll(),pollInterval);
-    return ()=>{clearInterval(timer);this.setTarget(null);};
+  start(seconds:number){
+    const timer=setInterval(()=>void this.poll(),seconds*1000);
+    return ()=>clearInterval(timer);
   }
 
   async leave(){
