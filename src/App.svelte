@@ -26,6 +26,8 @@
   import { frameHeaderText, defaultCatalog, tagPresets, availablePresetTags, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
+  const framePalette=['#527da6','#9270af','#438a80','#b77952','#ad657e','#6679af',
+    '#778448','#54869d','#a77756','#7e6c9f','#4d8a69','#a5655d'];
   const noteStyles:NoteStyle[]=['bold','italic','underline'];
   function formatNote(style:NoteStyle){
     if(!editing || !active || range?.id!==active.id || range.start===range.end)return;
@@ -1468,7 +1470,12 @@
   function add(kind:Kind, extra:Partial<Item>={}) {
     if(!editing)return;
     const o=item(kind,kind==='Note'?'New note':kind,(width/2-tx)/zoom-110,(height/2-ty)/zoom-60,{inheritDepartment:true,...extra});
-    if(kind==='Frame'){o.w=480;o.h=300;board.items.unshift(o);}else board.items.push(o);
+    if(kind==='Frame'){
+      o.w=480;o.h=300;
+      const previousColor=board.items.find(item=>item.kind==='Frame')?.frameBackground;
+      o.frameBackground=framePalette[(framePalette.indexOf(previousColor??'')+1)%framePalette.length];
+      board.items.unshift(o);
+    }else board.items.push(o);
     ids=[o.id];focusArea='canvas';change();return o;
   }
   async function importEmbeddedImages(files:{name:string;read:()=>Promise<string>}[], x=(width/2-tx)/zoom,y=(height/2-ty)/zoom,warnLarge=true) {
