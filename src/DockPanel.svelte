@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
 
   let {name, panelClass, side=$bindable(), open=$bindable(), children}: {
-    name:string; panelClass:'sidebar'|'inspector'; side:string; open:boolean; children:Snippet
+    name:string; panelClass:'sidebar'|'inspector'|'search-panel'; side:string; open:boolean; children:Snippet
   } = $props();
   let panel:HTMLElement;
   let target=$state(''), dragging=$state(false);
@@ -39,7 +39,7 @@
 
 <svelte:window onpointermove={move} onpointerup={finish} onpointercancel={cancel} onblur={cancel}/>
 <aside bind:this={panel} class={panelClass} class:collapsed={!open} aria-label={name}
-  style:order={(side==='left'?1:4)+(panelClass==='inspector'?1:0)}>
+  style:order={(side==='left'?1:4)+(panelClass==='sidebar'?0:1)}>
   <div class="panel-head">
     <button class="panel-grip" title={'Drag '+name+' to either edge, or use the arrow keys'} aria-label={'Move '+name}
       onpointerdown={begin} onkeydown={key}>

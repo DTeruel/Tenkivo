@@ -295,7 +295,7 @@
   }
   function setLimit(n:number){historyLimit=normalizeLimit(n);localStorage.setItem('navigation-limit',String(historyLimit));trimHistory();}
   function view(){return {page:current,x:tx,y:ty,zoom,ids:[...ids]};}
-  function resetViews(){folderCanvas='';searching=false;searchQuery='';modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
+  function resetViews(){folderCanvas='';searchQuery='';modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
   function rememberView(){if(cursor>=0)history[cursor]=view();}
   function travel(step:number){
     if(historyMenu)historyMenu.open=false;
@@ -1137,10 +1137,15 @@
     return o.link ?? (o.kind==='Page link' && o.target ? {pageId:o.target} : undefined);
   }
   let searchQuery=$state('');
-  let searching=$state(false);
+  let searchOpen=$state(localStorage.getItem('search-open')==='true');
+  let searchSide=$state(localStorage.getItem('search-side')==='right'?'right':'left');
+  $effect(()=>{
+    localStorage.setItem('search-open',String(searchOpen));
+    localStorage.setItem('search-side',searchSide);
+  });
   let searchInput=$state<HTMLInputElement>();
   async function openSearch(){
-    searching=true;pagesOpen=true;
+    searchOpen=true;
     await tick();
     searchInput?.focus();
     searchInput?.select();
@@ -1666,6 +1671,19 @@
     try{const f=await open({filters:[{name:'Tenkivo projects',extensions:['tkv','gdstudio']}]});if(f && await confirmUnsaved('open'))await load(await invoke('open_project',{path:f}),f);}
     catch(e){recordError('Project file',e);status=String(e);if(welcome)welcomeError=status;}
   }
+  const storedMinutes=Number(localStorage.getItem('autosave-minutes'));
+  let autosaveMinutes=$state(Number.isInteger(storedMinutes) && storedMinutes>=1 && storedMinutes<=1440?storedMinutes:5);
+  let autosaveEnabled=$state(localStorage.getItem('autosave-enabled')==='true');
+  $effect(()=>{
+    localStorage.setItem('autosave-enabled',String(autosaveEnabled));
+    localStorage.setItem('autosave-minutes',String(autosaveMinutes));
+    if(!autosaveEnabled || welcome || !dirty || !isTauri())return;
+    const timer=setInterval(()=>{
+      if(canSaveProject && (path || onlineProject) && !closingWindow && !launching &&
+        !gesture && !drag && !document.querySelector('dialog[open]'))void saveFile();
+    },autosaveMinutes*60_000);
+    return ()=>clearInterval(timer);
+  });
   async function saveFile(){
     if(busy)return;busy=true;
     try{
@@ -2066,9 +2084,7 @@
     <button class="mode-switch" class:edit={editing} class:read-mode={!editing} onclick={toggleEdit} title={editing?'Switch to read mode (E)':'Enable editing (E)'}>{#if !editing}<svg aria-hidden="true" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M6.5 8V6a3.5 3.5 0 0 1 7 0v2"/></svg>{/if}{editing?'Editing · '+(editor?.name??''):'Read mode'}</button>
   </div>
   <div class="workspace">
-  <DockPanel name={searching?'Search':'Pages'} panelClass="sidebar" bind:side={pagesSide} bind:open={pagesOpen}>
-    {#if searching}
-      <button class="search-back" onclick={()=>searching=false}>← Pages</button>
+  <DockPanel name="Search" panelClass="search-panel" bind:side={searchSide} bind:open={searchOpen}>
       <label>Search project<input type="search" placeholder="Pages, objects or note text" bind:this={searchInput} bind:value={searchQuery}
         onkeydown={e=>{if(e.key==='Enter' && searchResults.length && !e.isComposing){e.preventDefault();void follow(searchResults[0].to);}}}/></label>
       <div class="project-search-results">
@@ -2076,7 +2092,8 @@
           <button class="reference-result" onclick={()=>follow(result.to)}><strong>{result.label}</strong><small>{result.detail}</small></button>
         {:else}{#if searchQuery.trim()}<small>No matches</small>{/if}{/each}
       </div>
-    {:else}
+  </DockPanel>
+  <DockPanel name="Pages" panelClass="sidebar" bind:side={pagesSide} bind:open={pagesOpen}>
     <div class="project-heading"><h2>{project.name}</h2><button aria-label="Project settings" title="Project settings" onclick={projectOptions}>⚙</button></div>
     <div class="pages-tools"><span class="section">Pages</span><button title="Add root page" aria-label="Add root page" disabled={!editing} onclick={()=>newPage()}>+</button></div>
     <div class="page-scroll">
@@ -2111,7 +2128,6 @@
         <button class="empty-trash" disabled={!editing} onclick={()=>ask('Empty trash')}>Empty trash…</button>
       {/if}
     </details>
-    {/if}
   </DockPanel>
   <main><div class="boardhead"><div><div class="canvas-label">
     <span class="section">{folderIndex?'Folder':'Canvas'}</span>
@@ -2404,6 +2420,14 @@
     <label>Online editor presence refresh<select bind:value={presenceSeconds} onchange={e=>localStorage.setItem('tenkivo-presence-seconds',e.currentTarget.value)}>
       {#each [15,30,60] as seconds}<option value={seconds}>{seconds} seconds</option>{/each}
     </select></label>
+    <h3>Autosave</h3>
+    <label class="check"><input type="checkbox" bind:checked={autosaveEnabled}/> Automatically save changes</label>
+    <label>Interval (minutes)<input type="number" min="1" max="1440" step="1" disabled={!autosaveEnabled} value={autosaveMinutes} onchange={e=>{
+      const minutes=e.currentTarget.valueAsNumber;
+      if(Number.isInteger(minutes) && minutes>=1 && minutes<=1440)autosaveMinutes=minutes;
+      e.currentTarget.value=String(autosaveMinutes);
+    }}/></label>
+    <small>Online projects save to GitHub.</small>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
     <h3>Canvas Snapping</h3><p>Hold Ctrl while dragging. Set a step to zero to disable snapping for that transform.</p>
     <div class="snap-fields">
