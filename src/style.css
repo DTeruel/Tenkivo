@@ -238,3 +238,7 @@ dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width
 .reference-result { display:grid; text-align:left; overflow-wrap:anywhere; }
 
 .search-back { align-self:flex-start; }
+.folder-index {flex:1;min-width:0;min-height:0;overflow:auto;padding:20px;}
+.folder-index > div {display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.folder-index h2 {margin:0;}
+.folder-entry {display:block;text-align:left;width:100%;padding:8px 10px;}

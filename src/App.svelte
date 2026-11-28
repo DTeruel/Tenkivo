@@ -203,7 +203,7 @@
     if(!editing || busy || !pageClipboard)return;
     const {page:original,selection}=pageClipboard;
     const source=clipboardSource;
-    const newPage:Page={id:crypto.randomUUID(),name:original.name,items:[],
+    const newPage:Page={id:crypto.randomUUID(),name:original.name,folder:original.folder,items:[],
       departments:source.generation===projectGeneration?original.departments:clipboardTags(original.departments??[],source)};
     const pasted=preparePaste(selection,newPage,false,0,0,true);
     newPage.items=pasted.items;newPage.connections=pasted.connections;
@@ -295,12 +295,12 @@
   }
   function setLimit(n:number){historyLimit=normalizeLimit(n);localStorage.setItem('navigation-limit',String(historyLimit));trimHistory();}
   function view(){return {page:current,x:tx,y:ty,zoom,ids:[...ids]};}
-  function resetViews(){searching=false;searchQuery='';modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
+  function resetViews(){folderCanvas='';searching=false;searchQuery='';modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
   function rememberView(){if(cursor>=0)history[cursor]=view();}
   function travel(step:number){
     if(historyMenu)historyMenu.open=false;
     const dest=history[cursor+step];if(!dest)return;
-    stopDrawing();wire=undefined;selectedConnection='';rememberView();cursor+=step;current=dest.page;tx=dest.x;ty=dest.y;zoom=dest.zoom;ids=dest.ids.filter(id=>board.items.some(o=>o.id===id && (matches(itemTags(o),filters))));
+    stopDrawing();wire=undefined;selectedConnection='';rememberView();cursor+=step;folderCanvas=dest.ids.length?dest.page:'';current=dest.page;tx=dest.x;ty=dest.y;zoom=dest.zoom;ids=dest.ids.filter(id=>board.items.some(o=>o.id===id && (matches(itemTags(o),filters))));
     inline='';range=undefined;gesture=undefined;liveBox=undefined;drag=undefined;marquee=undefined;menu=undefined;
   }
   function setFilters(next:Department[]){filters=next;ids=picked.filter(o=>matches(itemTags(o),next)).map(o=>o.id);}
@@ -343,6 +343,7 @@
     status=(cut?'Cut ':'Copied ')+selection.items.length+(selection.items.length===1?' object':' objects');
   }
   async function pasteObjects(point?:{x:number;y:number}){
+    if(folderIndex)return;
     const clipboard=canvasClipboard;
     if(!clipboard || busy)return;
     const sourceProject=clipboardSource;
@@ -785,6 +786,7 @@
     }catch(error){status='Could not replace the attachment. '+String(error);}
   }
   function insertUrl(text:string,x?:number,y?:number){
+    if(folderIndex)return false;
     const u=webAddress(text);if(!u)return false;
     if(!editing){status=readHint;return true;}
     const owner=board,video=videoId(u.href);
@@ -1002,6 +1004,15 @@
     for(const {p} of [...rows].reverse())if(matches(pageTags.get(p.id)??[],filters) || keep.has(p.id)){keep.add(p.id);if(p.parentId)keep.add(p.parentId);}
     return rows.filter(({p})=>keep.has(p.id));
   });
+  let folderCanvas=$state('');
+  const folderIndex=$derived(!!board?.folder && folderCanvas!==current);
+  function convertPage(target:Page){
+    if(!editing)return;
+    menu=undefined;
+    target.folder=!target.folder;
+    if(target.id===current){stopDrawing();ids=[];inline='';selectedConnection='';folderCanvas='';}
+    change();
+  }
   function newPage(parent?:Page){pageParent=parent?.id;ask('New page');}
   function togglePageTag(p:Page,id:string,on:boolean){
     const tags=pageTags.get(p.id)??[];
@@ -1139,7 +1150,7 @@
     const results:{label:string;detail:string;to:Destination}[]=[];
     if(!query)return results;
     for(const p of project.pages){
-      if(p.name.toLocaleLowerCase().includes(query))results.push({label:p.name,detail:'Page',to:{pageId:p.id}});
+      if(p.name.toLocaleLowerCase().includes(query))results.push({label:p.name,detail:p.folder?'Folder':'Page',to:{pageId:p.id}});
       for(const o of p.items){
         const index=o.kind==='Note'?o.body.toLocaleLowerCase().indexOf(query):-1;
         if(o.name.toLocaleLowerCase().includes(query) || index>=0){
@@ -1177,7 +1188,7 @@
     const target=p?.items.find(o=>o.id===to.itemId);
     if(!p || (to.itemId && !target)){status='Link destination is missing.';return;}
     await navigate(p);
-    if(target){if(!matches(itemTags(target),filters)){status='Destination hidden by tag filters.';return;}ids=[target.id];fit([target]);}
+    if(target){if(p.folder){folderCanvas=p.id;await tick();}if(!matches(itemTags(target),filters)){status='Destination hidden by tag filters.';return;}ids=[target.id];fit([target]);}
   }
   function remember(o:Item, field:HTMLTextAreaElement) {
     range={id:o.id,start:field.selectionStart,end:field.selectionEnd};
@@ -1325,7 +1336,7 @@
     tx=(width-w*zoom)/2-left*zoom; ty=(height-h*zoom)/2-top*zoom;
   }
   async function navigate(p: Page) { stopDrawing();wire=undefined;selectedConnection=''; typingField=null;frameOnly='';playing='';
-    rememberView();current=p.id; ids=[]; inline=''; range=undefined; drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;menu=undefined;await tick();fit();
+    rememberView();folderCanvas='';current=p.id; ids=[]; inline=''; range=undefined; drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;menu=undefined;await tick();fit();
     history=history.slice(0,cursor+1);history.push(view());cursor=history.length-1;trimHistory();
   }
   function scale(factor:number, x=width/2,y=height/2) {
@@ -1801,7 +1812,7 @@
     });
     else recordActivity('Startup','Tenkivo browser preview started.');
     const listener=isTauri()?getCurrentWebview().onDragDropEvent(({payload})=>{
-      if(welcome || payload.type!=='drop')return;
+      if(welcome || folderIndex || !viewport || payload.type!=='drop')return;
       const r=viewport.getBoundingClientRect(),x=payload.position.x/devicePixelRatio-r.left,y=payload.position.y/devicePixelRatio-r.top;
       if(x>=0 && y>=0 && x<=r.width && y<=r.height)offerFiles(payload.paths,(x-tx)/zoom,(y-ty)/zoom);
     }).catch(error=>{recordError('Drag and drop listener',error);return undefined;}):undefined;
@@ -2075,7 +2086,7 @@
       <button class="page" class:chosen={p.id===current} style:padding-left={9+depth*17+'px'} data-drop={treeDrop.startsWith(p.id+' ')?treeDrop.split(' ').at(-1):''}
         onpointerdown={e=>pageDown(e,p)} draggable={editing && !isTauri()} ondragstart={e=>{draggingPage=p.id;e.dataTransfer?.setData('studio/page',p.id);}}
         ondragend={()=>{treeDrop='';draggingPage='';}} ondragover={e=>{if(editing && draggingPage){e.preventDefault();treeDrop=p.id+' '+placement(e);}}}
-        ondrop={e=>movePage(e,p)} oncontextmenu={e=>{focusArea='tree';context(e,p);}} data-page={p.id} onfocus={()=>focusArea='tree'} onclick={()=>{if(suppressPageClick){suppressPageClick=false;return;}focusArea='tree';void navigate(p);}}><span>▧</span><span class="page-name">{p.name}</span></button>
+        ondrop={e=>movePage(e,p)} oncontextmenu={e=>{focusArea='tree';context(e,p);}} data-page={p.id} onfocus={()=>focusArea='tree'} onclick={()=>{if(suppressPageClick){suppressPageClick=false;return;}focusArea='tree';void navigate(p);}}><span aria-hidden="true">{p.folder?'📁':'▧'}</span><span class="page-name">{p.name}</span></button>
       <span class="page-tags" title={(pageTags.get(p.id)??[]).map(d=>names[d]).join(', ')}>{#each pageTags.get(p.id)??[] as d}<i style:background={colors[d]}></i>{/each}</span>
       {#if unreadCount}<button class="unread-comments" title="Read unread comments" aria-label={'Unread comments on '+p.name} onclick={()=>showComments(unreadComments(p)?p:p.items.find(o=>unreadComments(o))!)}>● {unreadCount}</button>{/if}
       {#if editorsByPage.get(p.id)?.length}
@@ -2103,12 +2114,22 @@
     {/if}
   </DockPanel>
   <main><div class="boardhead"><div><div class="canvas-label">
-    <span class="section">Canvas</span>
+    <span class="section">{folderIndex?'Folder':'Canvas'}</span>
+    {#if board.folder && board.items.length}<button onclick={()=>{ids=[];folderCanvas=folderIndex?current:'';}}>{folderIndex?'View canvas':'Folder contents'}</button>{/if}
     <span class="editing-presence" aria-live="polite">{#if editorsByPage.get(current)?.length}{editingNotice(editorsByPage.get(current)!)}{/if}</span>
     {#if !editing}<span class="read-caption">Editing is locked</span><button class="enable-edit" onclick={toggleEdit}>Enable editing <kbd>E</kbd></button>{/if}
   </div><h1>{board.name}</h1></div></div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="canvas-area" data-toolbar-side={canvasToolbarSide} bind:this={canvasArea}>
+    {#if folderIndex}
+      <section class="folder-index" aria-label="Folder contents">
+        <div><h2>Contents</h2>{#if editing}<button onclick={()=>newPage(board)}>Add child page…</button>{/if}</div>
+        {#each pageRows.filter(row=>row.p.parentId===current) as row (row.p.id)}
+          <button class="folder-entry" onclick={()=>navigate(row.p)}><span aria-hidden="true">{row.p.folder?'📁':'▧'}</span> {row.p.name}</button>
+        {:else}<p>{project.pages.some(p=>p.parentId===current)?'No children match the current filters.':'This folder is empty.'}</p>{/each}
+      </section>
+    {:else}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="viewport" class:drawing-mode={drawingMode} bind:this={viewport} bind:clientWidth={width} bind:clientHeight={height} oncontextmenu={e=>canvasMenu(e)} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>{wire=undefined;stroke=undefined;drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;commit();}} ondragover={e=>e.preventDefault()} ondrop={drop}>
       {#if drawingMode}
         <div class="drawing-input"></div>
@@ -2187,6 +2208,7 @@
         {/if}
       </div>
     </div>
+    {/if}
     <footer class="canvas-toolbar" aria-label="Canvas toolbar">
     <button class="panel-grip canvas-toolbar-grip" aria-label="Move canvas toolbar"
       title="Drag the toolbar to a canvas edge, or use the arrow keys"
@@ -2208,10 +2230,10 @@
     <button aria-label="Undo" title="Undo (Ctrl/Cmd + Z)" disabled={!editing || revision===0} onclick={()=>restoreEdit(-1)}>↶</button>
     <button aria-label="Redo" title="Redo (Ctrl/Cmd + Shift + Z)" disabled={!editing || revision>=revisionCount-1} onclick={()=>restoreEdit(1)}>↷</button>
     <div class="spacer"></div>
-    <button aria-label="Zoom out" onclick={()=>scale(.8)}>−</button>
+    {#if !folderIndex}<button aria-label="Zoom out" onclick={()=>scale(.8)}>−</button>
     <span>{Math.round(zoom*100)}%</span>
     <button aria-label="Zoom in" onclick={()=>scale(1.25)}>+</button>
-    <button onclick={()=>fit()}>Fit <kbd>F</kbd></button>
+    <button onclick={()=>fit()}>Fit <kbd>F</kbd></button>{/if}
     </footer>
     {#if dockDrag?.moving}
       {#each canvasEdges as edge}
@@ -2264,7 +2286,7 @@
         <button onclick={()=>revealAttachment(active!)}>Open folder</button>
         {#if !active.attachment.local}<button disabled={!editing || !!copyingItem} onclick={()=>copyToProject(active!)}>{copyingItem===active.id?'Copying…':'Copy to project'}</button>{/if}
       </div></section>{/if}
-    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>Page details</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{@render references()}{@render inspectorConversations(board)}{/if}
+    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>{board.folder?'Folder details':'Page details'}</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{@render references()}{@render inspectorConversations(board)}{/if}
   </DockPanel>
   </div>
   {#if menu}
@@ -2272,6 +2294,7 @@
       {#if menu.page}
         {@const target=menu.page}
         {#if target.id!==current}<button onclick={()=>{void navigate(target);menu=undefined;}}>Open page</button>{/if}
+        <button disabled={!editing} onclick={()=>convertPage(target)}>{target.folder?'Convert to page':'Convert to folder'}</button>
         <button disabled={!editing} onclick={()=>{newPage(target);menu=undefined;}}>Add child page…</button>
         <details class="object-departments"><summary>Tags</summary><fieldset disabled={!editing}>
         {#if target.parentId}<label><input type="checkbox" checked={target.departments===undefined} onchange={e=>{target.departments=e.currentTarget.checked?undefined:[...pageTags.get(target.id)??[]];change();}}/> Inherit from parent</label>{/if}
