@@ -2207,7 +2207,7 @@
           {@const headerColor=o.kind==='Frame'?(preview??frameColorFor(o)):(preview??o.backgroundColor)}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} ondblclick={e=>activate(o,e)}>
+          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:image-mat={o.kind==='Image' && o.showTitle===false && !!headerColor} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--card-color={headerColor} style:--card-text={headerColor && frameHeaderText(headerColor)} ondblclick={e=>activate(o,e)}>
             {#if o.kind==='Image' && o.attachment}<AttachmentImage project={path} attachment={o.attachment} name={o.name}/>{:else if o.kind==='Image'}<img draggable="false" src={o.source} alt={o.name} decoding="async"/>{/if}
             {#if o.drawing}<DrawingStroke drawing={o.drawing}/>{/if}
             {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption"><span class="caption-title">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}
@@ -2329,7 +2329,7 @@
       <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
       <label>Title<input bind:value={active.name} oninput={change}/></label>
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
-      {#if ['Frame','Note','Table'].includes(active.kind)}{@render backgroundPicker(active,'inspector-background')}{/if}
+      {@render backgroundPicker(active,'inspector-background')}
       {@render departmentPicker()}
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
@@ -2393,7 +2393,7 @@
         <hr/>
         <button onclick={()=>{fit();menu=undefined;}}>Focus selection</button>
         {@render departmentPicker()}
-        {#if menu.item && ['Frame','Note','Table'].includes(menu.item.kind)}{@render backgroundPicker(menu.item,'context-background')}{/if}
+        {#if menu.item}{@render backgroundPicker(menu.item,'context-background')}{/if}
         {#if active?.kind==='Image'}{@render imageTitle(active)}{/if}
         {#if active?.attachment || active?.url}<button onclick={()=>{menu=undefined;void openResource(active!);}}>Open</button>{/if}
         {#if picked.length===1}<button disabled={!editing} onclick={()=>{menu=undefined;chooseLink();}}>Link object…</button>{/if}
