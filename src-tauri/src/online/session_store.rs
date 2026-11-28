@@ -1,4 +1,5 @@
 use super::SavedSession;
+#[cfg(windows)]
 use std::path::PathBuf;
 
 #[cfg(windows)]
