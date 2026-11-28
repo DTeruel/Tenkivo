@@ -26,8 +26,10 @@
   import { frameHeaderText, defaultCatalog, tagPresets, availablePresetTags, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
-  const framePalette=['#527da6','#9270af','#438a80','#b77952','#ad657e','#6679af',
-    '#778448','#54869d','#a77756','#7e6c9f','#4d8a69','#a5655d'];
+  const framePalette=[
+    '#4ea0ff','#ff785a','#51c78b','#b785ee','#edc450','#32bdc8',
+    '#e66fa8','#9bb24e','#6876dc','#d58d42','#8c664e','#a1aebb',
+  ];
   const noteStyles:NoteStyle[]=['bold','italic','underline'];
   function formatNote(style:NoteStyle){
     if(!editing || !active || range?.id!==active.id || range.start===range.end)return;
@@ -1467,13 +1469,16 @@
     else if(!editing)status=readHint;
     else if(editing && o.kind==='Note'){inline=o.id;await tick();viewport.querySelector<HTMLElement>('[contenteditable]')?.focus();}
   }
+  function frameColorFor(frame:Item){
+    return frame.frameBackground??colors[itemTags(frame)[0]]??'#808080';
+  }
   function add(kind:Kind, extra:Partial<Item>={}) {
     if(!editing)return;
     const o=item(kind,kind==='Note'?'New note':kind,(width/2-tx)/zoom-110,(height/2-ty)/zoom-60,{inheritDepartment:true,...extra});
     if(kind==='Frame'){
       o.w=480;o.h=300;
       const frames=board.items.filter(item=>item.kind==='Frame');
-      const usedColors=new Set(frames.map(frame=>frame.frameBackground?.toLowerCase()));
+      const usedColors=new Set(frames.map(frame=>frameColorFor(frame).toLowerCase()));
       const nextUnused=framePalette.find(color=>!usedColors.has(color));
       const previousColor=frames[0]?.frameBackground?.toLowerCase()??'';
       o.frameBackground=nextUnused??framePalette[(framePalette.indexOf(previousColor)+1)%framePalette.length];
@@ -1897,7 +1902,7 @@
 {/snippet}
 {#snippet frameBackgroundPicker(frame:Item)}
         <div class="frame-background">
-          <label>Background color<input type="color" disabled={!editing} value={frame.frameBackground??colors[itemTags(frame)[0]]??'#808080'}
+          <label>Background color<input type="color" disabled={!editing} value={frameColorFor(frame)}
             onchange={e=>{frame.frameBackground=e.currentTarget.value;change();}}/></label>
           <button disabled={!editing || !frame.frameBackground} onclick={()=>{delete frame.frameBackground;change();}}>Reset</button>
         </div>
@@ -2067,7 +2072,7 @@
       <div class="world" style:transform={'translate('+tx+'px,'+ty+'px) scale('+zoom+')'}>
         {#each visible as o (o.id)}
           {@const destination=objectLink(o)}
-          {@const frameColor=o.kind==='Frame'?(o.frameBackground??colors[itemTags(o)[0]]??'#808080'):undefined}
+          {@const frameColor=o.kind==='Frame'?frameColorFor(o):undefined}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--frame-color={frameColor} style:--frame-text={frameColor && frameHeaderText(frameColor)} ondblclick={e=>activate(o,e)}>
