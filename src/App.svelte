@@ -94,11 +94,23 @@
     catch{return [];}
   }
   let recent=$state<Recent[]>(readRecent()),availability=$state<Record<string,string>>({});
+  const lastOnlineProjectKey='studio-last-online-project';
+  function readLastOnlineProject():Pick<OnlineProject,'repo'|'branch'>|undefined{
+    try{
+      const value=JSON.parse(localStorage.getItem(lastOnlineProjectKey)??'null');
+      if(typeof value?.repo==='string' && typeof value.branch==='string')return value;
+    }catch{/* An invalid saved location cannot be reopened. */}
+  }
+  function rememberOnlineProject(remote:OnlineProject){
+    localStorage.setItem(lastOnlineProjectKey,JSON.stringify({repo:remote.repo,branch:remote.branch}));
+    localStorage.removeItem('studio-last');
+  }
   function rememberProject(location:string){
     if(!location)return;
     recent=[{name:project.name,path:location},...recent.filter(v=>v.path!==location)];
     localStorage.setItem('studio-recent',JSON.stringify(recent));
     localStorage.setItem('studio-last',location);
+    localStorage.removeItem(lastOnlineProjectKey);
   }
   function forgetProject(location:string){
     recent=recent.filter(v=>v.path!==location);
@@ -521,7 +533,7 @@
     if(revisions[revision]===saving)revisions[revision]=savedRevision;
     dirty=JSON.stringify(project)!==raw;
   }
-  async function accessOnline(action:'open'|'save'|'reload'|'create',selectedRepo?:string){
+  async function accessOnline(action:'open'|'save'|'reload'|'create',selectedRepo?:string,selectedBranch?:string){
     if(onlineWorking || busy || !account)return;
     const repo=action==='reload' ? onlineProject?.repo : selectedRepo??onlineRepo.trim();
     if(!repo || (action==='save' && (welcome || onlineProject)))return;
@@ -540,14 +552,14 @@
       }else if(action==='save'){
         const snapshot=snapshotForSave(true);
         const saved=await invoke<{sha:string;branch:string}>('online_save',{repo,branch:null,sha:null,document:snapshot.raw});
-        if(path && localStorage.getItem('studio-last')===path)localStorage.removeItem('studio-last');
         onlineProject={repo,...saved,writable:true};path='';
+        rememberOnlineProject(onlineProject);
         if(editing && onlineIdentity)editorId=onlineIdentity.id;
         acceptSaved(snapshot);
         status='Project saved online · '+repo;
         void discoverProjects();
       }else{
-        const {document,...remote}=await invoke<Omit<OnlineProject,'repo'> & {document:string}>('online_open',{repo,branch:action==='reload'?onlineProject?.branch:null});
+        const {document,...remote}=await invoke<Omit<OnlineProject,'repo'> & {document:string}>('online_open',{repo,branch:action==='reload'?onlineProject?.branch:selectedBranch??null});
         await load(document,'',{repo,...remote});
         status='Online project opened · '+repo;
       }
@@ -1453,6 +1465,7 @@
     inline='';frameOnly='';titleId='';playing='';range=undefined;marquee=undefined;
     gesture=undefined;drag=undefined;liveBox=undefined;
     localStorage.removeItem('studio-last');
+    localStorage.removeItem(lastOnlineProjectKey);
     await checkRecent();
   }
   async function named(){
@@ -1483,7 +1496,9 @@
     }
     if(!validProject(data))throw Error('Unsupported or invalid project.');
     if(remote)checkOnlineAttachments(data);
-    project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
+    project=data;path=location;onlineProject=remote;welcome=false;
+    if(remote)rememberOnlineProject(remote);else rememberProject(location);
+    dirty=false;editorId='';editing=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
     openingEditPending=projectOpeningMode==='edit' && !openNextProjectInReadMode;
     openNextProjectInReadMode=false;
     applyProjectOpeningMode();
@@ -1623,7 +1638,13 @@
     };
     if(isTauri()){diagnosticsTimer=setInterval(collect,2000);collect();}
     if(isTauri())void invoke<string|null>('github_client_id').then(id=>{configuredClientId=id??'';}).catch(()=>{});
-    const restoreFrame=isTauri()?requestAnimationFrame(()=>{if(!restoreSkipped)void restoreGitHubAccount();}):undefined;
+    let restoreFrame:number|undefined;
+    const githubRestore=isTauri()?new Promise<void>(resolve=>{
+      restoreFrame=requestAnimationFrame(()=>{
+        if(restoreSkipped)resolve();
+        else void restoreGitHubAccount().finally(resolve);
+      });
+    }):undefined;
     if(isTauri())void getVersion().then(version=>{
       appVersion=version;
       recordActivity('Startup','Tenkivo '+version+' started.');
@@ -1645,8 +1666,23 @@
         scheduleUpdateCheck();
       }else void checkUpdates();
     }).catch(()=>{void checkUpdates();});
-    const last=localStorage.getItem('studio-last');
-    if(openingModeStartup)void openingModeStartup.then(()=>invoke<string|null>('startup_project')).then(file=>{if(file)void openRecent(file);else if(startup==='last' && last)void openRecent(last);else void checkRecent();}).catch(()=>void checkRecent());
+    if(openingModeStartup)void openingModeStartup.then(()=>invoke<string|null>('startup_project')).then(async file=>{
+      if(file){await openRecent(file);return;}
+      if(startup==='last'){
+        const remote=readLastOnlineProject();
+        if(remote){
+          await githubRestore;
+          if(!welcome || busy || launching || dialog.open || restoreSkipped || startup!=='last')return;
+          if(account)await accessOnline('open',remote.repo,remote.branch);
+          else welcomeError='Sign in to GitHub to reopen '+remote.repo+'.';
+          if(!welcome)return;
+        }else{
+          const local=localStorage.getItem('studio-last');
+          if(local){await openRecent(local);return;}
+        }
+      }
+      await checkRecent();
+    }).catch(()=>void checkRecent());
     else void checkRecent();
     const before=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue='';}};
     const refresh=()=>{if(welcome)void checkRecent();};
