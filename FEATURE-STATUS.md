@@ -1,16 +1,18 @@
 # Feature status
 
-Status of the requested desktop application as of 0.10.0.
+Status of the Tenkivo desktop app as of 0.14.7. macOS support is deferred for a later phase.
 
-| Area | Available | Remaining |
+| Area | Available | Remaining / planned |
 | --- | --- | --- |
-| Distribution | Windows portable build, installer on request, release notes and startup update check | macOS build and verification, published release-to-release update test |
-| Projects | Create, open, manually save, move project and assets, edit display name and description | Custom project icons, project deletion and direct ZIP import |
-| Collaboration | Local projects, GitHub sign-in and shared projects in private repositories, shared file attachments, revision checks on save | Page reservations, presence, automatic synchronization and offline drafts |
-| Navigation | Page hierarchy, drag to reparent, page shortcuts, viewport history, read/edit mode, page trash | Dedicated folders, custom shared views, per-view hidden pages and restoration, full breadcrumb trail |
-| Content | Notes, font size and auto-fit, images, grouped frames, files, folders, shortcuts, web link cards and YouTube embeds | Rich text formatting, spreadsheet-style tables, diagram connectors |
-| References | Editable object titles, links from text spans and objects to pages and objects, focused destination navigation | Reference support for future table and diagram elements |
-| Editing | Zoom, pan, focus, marquee, undo/redo, group transforms, independent frame editing, alignment, snapping, deletion and shortcut help | General copy/paste across elements and pages, duplicate page, optional page-delete confirmation, complete keyboard coverage |
-| Tags | Editable presets, custom names and colors, multiple tags per page, persistent filters, and inherited or explicit object tags | Additional custom tree views |
-| Attachments | Local copies, linked originals, native opening, missing-image placeholder and manual relinking | Project-managed preview cache, missing-file detection for all card types |
-| Export | ZIP with external path review and conversion, page/project PDF, preview, A4 tiling, index, internal links and tag filtering | macOS verification |
+| Distribution | Windows portable build, optional installer, GitHub release workflow, update checks, release notes, version display | macOS support and verification are deferred; verify the complete update flow against a published release |
+| Projects | Create, open, save, rename, describe, export to ZIP, open .tkv projects, recent-project welcome screen, startup preferences | Project deletion and recovery for accidentally removed project files |
+| Collaboration | GitHub sign-in, private online projects, verified GitHub collaborators and read-only access, live page-edit presence, page history, conflict warnings, GitHub refresh and save | More robust simultaneous edits on different pages, clearer recovery when a remote save conflicts or fails |
+| Navigation | Page hierarchy, drag to reorganize, folders, multiple custom views, hidden-page restoration, navigation history, breadcrumbs, trash | Reordering pages across custom views with a clearer overview; configurable view sharing |
+| Canvas | Infinite canvas, zoom, pan, selection, group transforms, alignment, snapping, frames, drawings, connectors, tables, links and attachments | Table row/column resizing; richer connector routing and labels |
+| Content | Rich-text notes, images, tables, frames, drawings, files, folders, web links, embedded YouTube/audio/video, tags, background colors, cross-page and cross-object references | More table formatting and cell-level styling; richer note layout and text formatting controls |
+| Search | Search panel for pages, objects, note text and references; persistent dock; navigate to results | Search filters by object type and tag; clearer result context for large projects |
+| Conversations | Threads on pages and objects, replies, unread indicators, archive and reopen | Notifications when the app is in the background; project-wide chat remains out of scope |
+| Attachments | Copy into project or link original, open in native app, relink missing files, online uploads, cache controls | Preview and recovery for more missing-file types; clearer storage usage overview |
+| Export | Page/project PDF, project ZIP, link review and conversion to project copies, PDF preview, index and internal links | Export verification across large projects and additional page layout options |
+| Settings and diagnostics | Light/dark/system themes, startup mode, autosave interval, navigation limit, canvas snapping, editor logs | Backup and restore settings; clearer diagnostics export |
+| Platform | Windows | macOS postponed; assess Linux only if there is demand |
