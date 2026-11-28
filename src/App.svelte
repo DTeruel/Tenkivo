@@ -32,6 +32,7 @@
     toggleStyle(active,range.start,range.end,style);change();
   }
   import { bounds, contains, resize, mapChild, enclosure, snap } from './geometry';
+  import type {CommentThread} from './model';
   import type { Box } from './geometry';
   import type { Department, Destination, Item, Kind, Page, TextLink, ProjectUser, PageVersion, BrushStroke, ObjectPort, Project } from './model';
 
@@ -275,7 +276,7 @@
   }
   let pagesOpen=$state(localStorage.getItem('pages-open')!=='false'), inspectorOpen=$state(localStorage.getItem('inspector-open')!=='false');
   $effect(()=>{localStorage.setItem('pages-side',pagesSide);localStorage.setItem('inspector-side',inspectorSide);localStorage.setItem('pages-open',String(pagesOpen));localStorage.setItem('inspector-open',String(inspectorOpen));});
-  let menu=$state<{x:number;y:number;page?:Page;canvas?:boolean;point?:{x:number;y:number}}>(), pendingPage=$state<Page>();
+  let menu=$state<{x:number;y:number;item?:Item;page?:Page;canvas?:boolean;point?:{x:number;y:number}}>(), pendingPage=$state<Page>();
   let focusArea:'tree'|'canvas'='canvas';
   let history=$state<{page:string;x:number;y:number;zoom:number;ids:string[]}[]>([]), cursor=$state(-1);
   let historyLimit=$state(normalizeLimit(Number(localStorage.getItem('navigation-limit')??10)));
@@ -299,7 +300,7 @@
     inline='';range=undefined;gesture=undefined;liveBox=undefined;drag=undefined;marquee=undefined;menu=undefined;
   }
   function setFilters(next:Department[]){filters=next;ids=picked.filter(o=>matches(itemTags(o),next)).map(o=>o.id);}
-  function context(e:MouseEvent,p?:Page,o?:Item){e.preventDefault();e.stopPropagation();selectedConnection='';if(o && !ids.includes(o.id))ids=[o.id];menu={x:Math.min(e.clientX,innerWidth-190),y:Math.min(e.clientY,innerHeight-260),page:p};}
+  function context(e:MouseEvent,p?:Page,o?:Item){e.preventDefault();e.stopPropagation();selectedConnection='';if(o && !ids.includes(o.id))ids=[o.id];menu={x:Math.min(e.clientX,innerWidth-190),y:Math.min(e.clientY,innerHeight-260),item:o,page:p};}
   function removeObjects(selection=ids){
     if(!editing || !selection.length)return;
     const removed=new Set(selection);
@@ -830,6 +831,52 @@
   let pickerUsers=$state<ProjectUser[]>([]), selectedUser=$state(''),registering=$state(false);
   let userName=$state(''),userIcon=$state(userIcons[0]);
   let editor=$derived(editorId===onlineIdentity?.id?onlineIdentity:project.users?.find(u=>u.id===editorId));
+  let commentItem=$state<Item|Page>(), threadId=$state(''), draftComment=$state('');
+  const reader=$derived(onlineProject?onlineIdentity:editor??lastLocalEditor([...(onlineIdentity?[onlineIdentity]:[]),...project.users??[]])??onlineIdentity);
+  const readKey=$derived('tenkivo-read-comments:'+JSON.stringify([onlineProject?.repo??(path||project.pages[0]?.id),reader?.id??'guest']));
+  let receiptVersion=$state(0);
+  const receipts=$derived.by(()=>{
+    void receiptVersion;
+    try{return new Set<string>(JSON.parse(localStorage.getItem(readKey)??'[]'));}catch{return new Set<string>();}
+  });
+  function unread(t:CommentThread){return t.messages.filter(m=>m.user!==reader?.id && !receipts.has(m.id)).length;}
+  function unreadComments(o:Item|Page){return (o.threads??[]).reduce((count,t)=>count+unread(t),0);}
+  function viewThread(t:CommentThread){
+    threadId=t.id;draftComment='';
+    if(unread(t)){
+      localStorage.setItem(readKey,JSON.stringify([...new Set([...receipts,...t.messages.map(m=>m.id)])]));
+      receiptVersion++;
+    }
+  }
+  function showComments(o:Item|Page, selected?:CommentThread|null){
+    menu=undefined;commentItem=o;threadId='';draftComment='';ask('Conversations');
+    if(selected===null)return;
+    const t=selected??o.threads?.find(t=>unread(t))??o.threads?.find(t=>!t.archived)??o.threads?.[0];
+    if(t)viewThread(t);
+  }
+  function groupComments(messages:CommentThread['messages']){
+    const groups:CommentThread['messages'][]=[];
+    for(const message of messages){
+      const lastGroup=groups.at(-1);
+      const first=lastGroup?.[0];
+      if(lastGroup && first?.user===message.user && Math.floor(first.time/60_000)===Math.floor(message.time/60_000)){
+        lastGroup.push(message);
+      }else groups.push([message]);
+    }
+    return groups;
+  }
+  function postComment(){
+    if(!editing || !editor || !commentItem || !draftComment.trim())return;
+    const message={id:crypto.randomUUID(),user:editor.id,author:editor.name,icon:editor.icon,text:draftComment.trim(),time:Date.now()};
+    const t=commentItem.threads?.find(t=>t.id===threadId);
+    if(t?.archived)return;
+    if(t)t.messages.push(message);
+    else{
+      threadId=crypto.randomUUID();
+      commentItem.threads=[...commentItem.threads??[],{id:threadId,archived:false,messages:[message]}];
+    }
+    change();draftComment='';
+  }
   function normalizeName(value:string){return value.trim().toLowerCase();}
   let validUsers=$derived(draftUsers.every(u=>u.name.trim()) && new Set(draftUsers.map(u=>normalizeName(u.name))).size===draftUsers.length);
   let validRegistration=$derived(userName.trim()!=='' && !project.users?.some(u=>normalizeName(u.name)===normalizeName(userName)));
@@ -1951,12 +1998,14 @@
     <div class="pages-tools"><span class="section">Pages</span><button title="Add root page" aria-label="Add root page" disabled={!editing} onclick={()=>newPage()}>+</button></div>
     <div class="page-scroll">
     {#each pageRows as {p,depth} (p.id)}
+      {@const unreadCount=unreadComments(p)+p.items.reduce((count,o)=>count+unreadComments(o),0)}
       <div class="tree-row" class:ancestor={!matches(pageTags.get(p.id)??[],filters)}>
       <button class="page" class:chosen={p.id===current} style:padding-left={9+depth*17+'px'} data-drop={treeDrop.startsWith(p.id+' ')?treeDrop.split(' ').at(-1):''}
         onpointerdown={e=>pageDown(e,p)} draggable={editing && !isTauri()} ondragstart={e=>{draggingPage=p.id;e.dataTransfer?.setData('studio/page',p.id);}}
         ondragend={()=>{treeDrop='';draggingPage='';}} ondragover={e=>{if(editing && draggingPage){e.preventDefault();treeDrop=p.id+' '+placement(e);}}}
         ondrop={e=>movePage(e,p)} oncontextmenu={e=>{focusArea='tree';context(e,p);}} data-page={p.id} onfocus={()=>focusArea='tree'} onclick={()=>{if(suppressPageClick){suppressPageClick=false;return;}focusArea='tree';void navigate(p);}}><span>▧</span><span class="page-name">{p.name}</span></button>
       <span class="page-tags" title={(pageTags.get(p.id)??[]).map(d=>names[d]).join(', ')}>{#each pageTags.get(p.id)??[] as d}<i style:background={colors[d]}></i>{/each}</span>
+      {#if unreadCount}<button class="unread-comments" title="Read unread comments" aria-label={'Unread comments on '+p.name} onclick={()=>showComments(unreadComments(p)?p:p.items.find(o=>unreadComments(o))!)}>● {unreadCount}</button>{/if}
       {#if editorsByPage.get(p.id)?.length}
         {@const editors=editorsByPage.get(p.id)!}
         <span class="page-editors" title={editingNotice(editors)} role="img" aria-label={editingNotice(editors)}>
@@ -2026,6 +2075,8 @@
                 <div class="body" use:fitText={{enabled:o.autoFit,size:o.size,text:o.body}}>{#each textParts(o) as part}<span style={part.css}>{#if part.to}<button class="inline-link" title={labelFor(part.to)} onclick={()=>follow(part.to!)}>{part.text}</button>{:else}{part.text}{/if}</span>{/each}</div>
               {/if}
             {/if}
+            {#if o.threads?.length}<button class="comment-pin" title="Open conversations" aria-label={'Open conversations on '+o.name} onclick={()=>showComments(o)}>
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 3.5h12a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H8L3 18v-4a2 2 0 0 1-1-1.7V5a1.5 1.5 0 0 1 2-1.5Z"/></svg></button>{/if}
             {#if destination}<button class="object-link" title={'Open '+labelFor(destination)} aria-label={'Open '+labelFor(destination)} onclick={()=>follow(destination)}>↗</button>{/if}
           </div>
         {/each}
@@ -2095,9 +2146,22 @@
     {/if}
     </div>
   </main>
+  {#snippet inspectorConversations(subject:Item|Page)}
+      <section class="inspector-section inspector-threads">
+        <h3>Conversations</h3>
+        <button class="new-comment-thread" aria-label="New comment thread" disabled={!editing || !editor} onclick={()=>showComments(subject,null)}>New</button>
+        {#each subject.threads??[] as t (t.id)}
+            {@const last=t.messages[t.messages.length-1]}
+            <button onclick={()=>showComments(subject,t)}>
+              <span class="thread-preview-title"><strong>{t.messages[0].text}</strong>{#if t.archived}<span class="archived-label">Archived</span>{/if}</span><small>{unread(t)?'Unread · ':''}{last.author} · {last.text}</small>
+            </button>
+        {/each}
+      </section>
+  {/snippet}
   <DockPanel name="Inspector" panelClass="inspector" bind:side={inspectorSide} bind:open={inspectorOpen}>
     {#if selectedConnection && arrows.some(a=>a.id===selectedConnection)}<h2>Connection</h2><button disabled={!editing} onclick={deleteConnection}>Delete connection</button>
-    {:else if active}<h2>{active.kind}</h2><fieldset disabled={!editing}>
+    {:else if active}<h2>{active.kind}</h2>
+      <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
       <label>Title<input bind:value={active.name} oninput={change}/></label>
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
       {@render departmentPicker()}
@@ -2112,13 +2176,14 @@
         <label class="check"><input type="checkbox" bind:checked={active.autoFit} onchange={change}/> Auto-fit text to box</label><label>Font size<input type="number" min="8" max="96" value={active.size} onchange={e=>{if(active){active.size=Math.max(8,Math.min(96,Number(e.currentTarget.value)||16));change();}}}/></label>{/if}
       <div class="dimensions">{#each ['w','h'] as key}<label>{key==='w'?'Width':'Height'}<input type="number" min="40" value={active[key as 'w'|'h']} onchange={e=>{if(active){active[key as 'w'|'h']=Math.max(40,Number(e.currentTarget.value)||40);change();}}}/></label>{/each}</div>
       <button onclick={()=>chooseLink()}>{objectLink(active)?'Edit object link':'Link object'}</button>
-    </fieldset>
-      {#if active.attachment}<p>{active.attachment.shared?'Shared file':active.attachment.local?'Project copy':'Linked original'}<br>{active.attachment.path}</p><div class="attachment-actions">
+    </fieldset></section>
+      {@render inspectorConversations(active)}
+      {#if active.attachment}<section class="inspector-section inspector-file"><h3>File</h3><p>{active.attachment.shared?'Shared file':active.attachment.local?'Project copy':'Linked original'}<br>{active.attachment.path}</p><div class="attachment-actions">
         <button disabled={!editing || copyingItem===active.id} onclick={()=>relink(active!)}>Relink…</button>
         <button onclick={()=>revealAttachment(active!)}>Open folder</button>
         {#if !active.attachment.local}<button disabled={!editing || !!copyingItem} onclick={()=>copyToProject(active!)}>{copyingItem===active.id?'Copying…':'Copy to project'}</button>{/if}
-      </div>{/if}
-    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>Page details</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{/if}
+      </div></section>{/if}
+    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>Page details</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{@render inspectorConversations(board)}{/if}
   </DockPanel>
   </div>
   {#if menu}
@@ -2133,6 +2198,7 @@
         </fieldset></details>
         <button onclick={()=>copyPage(target)}>Copy page</button>
         <button disabled={!editing || !pageClipboard} onclick={()=>void pastePage()}>Paste page</button>
+        <button onclick={()=>showComments(target)}>Conversations…</button>
         <button onclick={()=>showPageHistory(target)}>View page history…</button>
         <button onclick={()=>{exporter.show(target);menu=undefined;}}>Export page as PDF…</button>
         <hr/>
@@ -2153,6 +2219,7 @@
         <hr/>
         <button onclick={()=>{menu=undefined;exporter.show(board);}}>Export page as PDF…</button>
       {:else}
+        {#if menu.item}<button onclick={()=>showComments(menu!.item!)}>Conversations…</button>{/if}
         <button disabled={!picked.length} onclick={()=>copyObjects(false)}>Copy</button>
         <button disabled={!editing || !picked.length} onclick={()=>copyObjects(true)}>Cut</button>
         <button disabled={!editing || (!canvasClipboard && !pageClipboard)} onclick={()=>pageClipboard?void pastePage():void pasteObjects()}>Paste</button>
@@ -2256,13 +2323,53 @@
       </div>
     {/if}
   </dialog>
-  <dialog bind:this={dialog} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
+  <dialog bind:this={dialog} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
-    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}
+    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
-    <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Internal link' && active}
+    <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Conversations' && commentItem}
+      {@const thread=commentItem.threads?.find(t=>t.id===threadId)}
+      {@const threads=commentItem.threads??[]}
+      <section class="comments-panel">
+        <strong>{commentItem.name}</strong>
+        {#if threads.length>1 || (!thread && threads.length)}
+          <label>Thread<select value={threadId} onchange={e=>{const t=commentItem?.threads?.find(t=>t.id===e.currentTarget.value);if(t)viewThread(t);}}>
+            {#if !thread}<option value="">New thread</option>{/if}
+            {#each threads as t}<option value={t.id}>{t.archived?'Archived · ':''}{t.messages[0].text.slice(0,48)}{unread(t)?' · Unread':''}</option>{/each}
+          </select></label>
+        {/if}
+        {#if thread}
+          <div class="comment-list">{#each groupComments(thread.messages) as group (group[0].id)}
+            {@const m=group[0]}
+            {@const githubId=/^github:(\d+)$/.exec(m.user)?.[1]}
+            <article>
+            <strong class="comment-author">
+              {#if githubId}<span class="page-editor-avatar" aria-hidden="true">{m.author.slice(0,1).toUpperCase()}<img src={'https://avatars.githubusercontent.com/u/'+githubId+'?s=40'} alt="" width="18" height="18" onerror={e=>e.currentTarget.setAttribute('hidden','')}/></span>
+              {:else}<span aria-hidden="true">{m.icon??project.users?.find(user=>user.id===m.user)?.icon??'👤'}</span>{/if}
+              {m.author}
+            </strong> <small>{new Date(m.time).toLocaleString(undefined,{dateStyle:'short',timeStyle:'short'})}</small>{#each group as message (message.id)}<p>{message.text}</p>{/each}</article>{/each}</div>
+        {/if}
+        {#if editing && editor && !thread?.archived}
+          <textarea aria-label="Comment" placeholder={thread?'Write a reply…':'Start a thread…'} bind:value={draftComment} rows="2" onkeydown={e=>{
+            if(e.key==='Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing){e.preventDefault();e.stopPropagation();if(!e.repeat)postComment();}
+          }}></textarea>
+          <button class="send-comment" title="Send (Ctrl / Cmd + Enter)" disabled={!draftComment.trim()} onclick={postComment}>Send</button>
+        {:else if !editing}<small>Open edit mode to add comments.</small>{/if}
+        {#if thread && (editing || thread.archived)}
+          <footer class="thread-actions">
+            {#if thread.archived}<button disabled={!editing} onclick={()=>{
+              if(!editing)return;
+              thread.archived=false;
+              change();
+            }}>Reopen</button>
+            {:else}<button onclick={()=>{thread.archived=true;change();}}>Archive</button>{/if}
+            {#if editing}<button onclick={()=>{threadId='';draftComment='';}}>New thread</button>{/if}
+          </footer>
+        {/if}
+      </section>
+    {:else if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
       {#if draftRange}<label>Link to<select bind:value={linkType}><option value="project">Page or object</option><option value="web">Website</option></select></label>{/if}

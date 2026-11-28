@@ -92,7 +92,9 @@ export function migrateLegacyDiagrams(project:Project){
     });
   }
 }
+export interface CommentThread {id:string;archived:boolean;messages:{id:string;user:string;author:string;icon?:string;text:string;time:number}[]}
 export interface Item {
+  threads?:CommentThread[];
   styles?: {start:number;end:number;style:NoteStyle}[];
   drawing?:Drawing;
   id: string; kind: Kind; name: string; x: number; y: number;
@@ -106,7 +108,15 @@ function validDestination(value: Destination) {
   return value && typeof value.pageId === 'string' &&
     (value.itemId === undefined || typeof value.itemId === 'string');
 }
+function validThreads(threads:CommentThread[]|undefined){
+  return threads===undefined || (Array.isArray(threads) && threads.every(thread=>
+    thread && typeof thread.id==='string' && typeof thread.archived==='boolean' &&
+    Array.isArray(thread.messages) && thread.messages.length>0 && thread.messages.every(message=>
+      message && typeof message.id==='string' && typeof message.user==='string' &&
+      typeof message.author==='string' && typeof message.text==='string' && Number.isFinite(message.time))));
+}
 function validLinks(o: Item) {
+  if(!validThreads(o.threads))return false;
   if(o.styles!==undefined && (!Array.isArray(o.styles) || !o.styles.every(s=>s &&
     ['bold','italic','underline'].includes(s.style) && Number.isInteger(s.start) && Number.isInteger(s.end) &&
     s.start>=0 && s.end>s.start && s.end<=o.body.length)))return false;
@@ -166,7 +176,7 @@ export function editBody(o: Item, value: string, selectionStart?: number) {
   });
   o.body = value;
 }
-export interface Page { connections?:Connection[]; id: string; name: string; items: Item[]; parentId?:string; departments?:Department[] }
+export interface Page { threads?:CommentThread[]; connections?:Connection[]; id: string; name: string; items: Item[]; parentId?:string; departments?:Department[] }
 export function treeRows(pages:Page[]) {
   const children=new Map<string|undefined,Page[]>();
   for(const p of pages){
@@ -225,6 +235,7 @@ export function validProject(value: unknown): value is Project {
     new Set(p.pages.map(v=>v?.id)).size === p.pages.length &&
     p.pages.every(v=>v && typeof v.id === 'string' && typeof v.name === 'string' && Array.isArray(v.items) && (v.departments===undefined || (Array.isArray(v.departments) && v.departments.every(d=>typeof d==='string'))) &&
       new Set(v.items.map(o=>o?.id)).size === v.items.length &&
+      validThreads(v.threads) &&
       (v.connections===undefined || validConnections(v)) &&
       v.items.every(o=>o && ['Note','Image','Frame','Page link','Web link','Attachment','Drawing'].includes(o.kind) && typeof o.id === 'string' &&
         (o.departments===undefined || (Array.isArray(o.departments) && o.departments.every(d=>typeof d==='string'))) &&

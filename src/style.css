@@ -198,3 +198,34 @@ button.connection-port {position:absolute;z-index:7;width:var(--port-size);heigh
 button.connection-port:hover,button.connection-port.target-port {background:#57a6ff;border-color:#57a6ff}
 .welcome-head h1 {display:flex;align-items:center;gap:12px}.welcome-head h1 img {display:block;border-radius:10px}
 .rich-editor{user-select:text;cursor:text;outline:1px solid var(--line)}.note-format{display:flex;gap:3px}.note-format button{background:var(--paper);border:1px solid var(--line)}.note-format button[aria-pressed=true]{background:var(--wash)}
+
+.comments-panel { display:grid; gap:10px; width:min(25rem,70vw); }
+.comment-list { max-height:36vh; overflow:auto; }
+.comment-list article { padding:8px 0; border-bottom:1px solid var(--line); }
+.comment-list p { white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0; }
+.unread-comments { color:var(--accent); white-space:nowrap; }
+
+dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width:0; padding:16px; }
+.comments-dialog h2 { margin:0 30px 6px 0; font-size:1rem; }
+.comments-dialog .comments-panel { width:auto; min-width:0; gap:6px; }
+.comments-panel > strong { overflow-wrap:anywhere; }
+.comments-panel textarea { min-height:0; margin:0; }
+.comments-panel .send-comment { justify-self:end; }
+.thread-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.comment-list { max-height:25vh; }
+.object .comment-pin { position:absolute; right:4px; bottom:4px; z-index:2; display:grid; place-items:center; padding:0; width:23px; height:23px; min-width:0; border:1px solid var(--line); border-radius:8px; background:var(--panel); pointer-events:auto; }
+.inspector-threads { display:grid; gap:4px; margin-block:12px; }
+.inspector-threads h3 { margin:0; font-size:.9rem; }
+.inspector-threads button { display:grid; text-align:left; min-width:0; }
+.inspector-threads strong,.inspector-threads small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.thread-actions { justify-content:space-between; border-top:1px solid var(--line); padding-top:8px; margin-top:4px; }
+.inspector-threads .new-comment-thread { justify-self:start; }
+.comment-author { display:inline-flex; align-items:center; gap:5px; vertical-align:middle; }
+.inspector-comment-actions { display:flex; gap:6px; }
+
+.inspector-section { display:grid; gap:8px; margin:0; padding:14px 0; }
+.inspector-section + .inspector-section { border-top:1px solid var(--line); }
+.inspector-section h3 { margin:0; font-size:.9rem; }
+.inspector-section fieldset,.inspector-file p { margin:0; min-width:0; }
+.thread-preview-title { display:flex; align-items:center; gap:6px; min-width:0; }
+.archived-label { margin-left:auto; flex:none; border:1px solid var(--line); border-radius:4px; padding:1px 4px; font-size:10px; }
