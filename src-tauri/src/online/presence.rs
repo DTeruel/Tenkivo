@@ -55,12 +55,7 @@ async fn read(
     Ok((Some(sha.to_owned()), editors))
 }
 
-async fn ensure_branch(
-    client: &Client,
-    token: &str,
-    url: &str,
-    project_branch: &str,
-) -> Result<(), String> {
+async fn ensure_branch(client: &Client, token: &str, url: &str) -> Result<(), String> {
     let reference = format!("{url}/git/ref/heads/{BRANCH}");
     let result = client
         .get(&reference)
@@ -72,11 +67,13 @@ async fn ensure_branch(
         checked(result)?;
         return Ok(());
     }
-    let commits: Vec<Value> = checked(
+    let tree: Value = checked(
         client
-            .get(format!("{url}/commits"))
-            .query(&[("sha", project_branch), ("per_page", "1")])
+            .post(format!("{url}/git/trees"))
             .bearer_auth(token)
+            .json(&json!({"tree":[{
+                "path": FILE, "mode": "100644", "type": "blob", "content": "{}"
+            }]}))
             .send()
             .await
             .map_err(connection_error)?,
@@ -84,11 +81,23 @@ async fn ensure_branch(
     .json()
     .await
     .map_err(connection_error)?;
-    let head = git_sha(
-        &commits
-            .first()
-            .ok_or("The project branch has no commits.")?["sha"],
-    )?;
+    let commit: Value = checked(
+        client
+            .post(format!("{url}/git/commits"))
+            .bearer_auth(token)
+            .json(&json!({
+                "message": "Initialize Tenkivo page presence",
+                "tree": git_sha(&tree["sha"])?,
+                "parents": []
+            }))
+            .send()
+            .await
+            .map_err(connection_error)?,
+    )?
+    .json()
+    .await
+    .map_err(connection_error)?;
+    let head = git_sha(&commit["sha"])?;
     let result = client
         .post(format!("{url}/git/refs"))
         .bearer_auth(token)
@@ -147,7 +156,10 @@ pub async fn online_page_presence(
     let client = client()?;
     if write && page.is_some() {
         let details = repository(&client, &token, &url).await?;
-        if !details.permissions.is_some_and(|permission| permission.push) {
+        if !details
+            .permissions
+            .is_some_and(|permission| permission.push)
+        {
             return Err("GitHub write access is required to publish page presence.".into());
         }
     }
@@ -159,7 +171,11 @@ pub async fn online_page_presence(
     };
 
     for attempt in 0..3 {
-        let (sha, mut editors) = read(&client, &token, &url).await?;
+        let (mut sha, mut editors) = read(&client, &token, &url).await?;
+        if write && page.is_some() && sha.is_none() {
+            ensure_branch(&client, &token, &url).await?;
+            (sha, editors) = read(&client, &token, &url).await?;
+        }
         let now = now_seconds();
         active_only(&mut editors, now);
         if !write {
@@ -172,9 +188,6 @@ pub async fn online_page_presence(
             return Err("This page presence session belongs to another account.".into());
         }
         if let Some(page) = &page {
-            if sha.is_none() {
-                ensure_branch(&client, &token, &url, &branch).await?;
-            }
             editors.insert(
                 session_id.clone(),
                 Editor {
