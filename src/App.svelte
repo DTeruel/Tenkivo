@@ -57,7 +57,6 @@
   let projectOpeningMode=$state<ProjectOpeningMode>(localStorage.getItem('studio-project-opening-mode')==='edit'?'edit':'read');
   let openingModeDialog:HTMLDialogElement;
   let draftOpeningMode=$state<ProjectOpeningMode>('read');
-  let hideOpeningModePrompt=$state(false);
   let openingModePromptShown=false;
   function setProjectOpeningMode(mode:ProjectOpeningMode){
     projectOpeningMode=mode;
@@ -68,15 +67,16 @@
     if(canChooseOpeningMode && !openingModePromptShown && localStorage.getItem('studio-hide-opening-mode-prompt')!=='true'){
       openingModePromptShown=true;
       draftOpeningMode=projectOpeningMode;
-      hideOpeningModePrompt=false;
       openingModeDialog.showModal();
       return;
     }
     selectEditor();
   }
   function finishOpeningModePrompt(apply:boolean){
-    if(apply)setProjectOpeningMode(draftOpeningMode);
-    if(apply || hideOpeningModePrompt)localStorage.setItem('studio-hide-opening-mode-prompt','true');
+    if(apply){
+      setProjectOpeningMode(draftOpeningMode);
+      localStorage.setItem('studio-hide-opening-mode-prompt','true');
+    }
     openingModeDialog.close();
     selectEditor();
   }
@@ -2098,7 +2098,6 @@
           <option value="edit">Edit mode</option>
         </select>
       </label>
-      <label class="opening-mode-opt-out"><input type="checkbox" bind:checked={hideOpeningModePrompt}/> Don’t show this again</label>
       <div class="dialog-actions">
         <button type="button" onclick={()=>finishOpeningModePrompt(false)}>Close</button>
         <button type="submit">Apply</button>
