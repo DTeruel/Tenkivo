@@ -667,39 +667,17 @@ pub fn online_chat_configured() -> bool {
 }
 
 #[tauri::command]
-pub async fn online_chat_session(
-    state: State<'_, Online>,
-    repo: String,
-    endpoint: Option<String>,
-    chat_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+pub async fn online_chat_session(state: State<'_, Online>, repo: String) -> Result<serde_json::Value, String> {
+    let endpoint = option_env!("TENKIVO_CHAT_AUTH_URL")
+        .ok_or("Online chat has not been configured for this build.")?;
+    if !endpoint.starts_with("https://") {
+        return Err("Chat authorization requires HTTPS.".into());
+    }
     repository_url(&repo)?;
-    let http = client()?;
-    let (url, credential) = if let Some(address) = endpoint {
-        let url = reqwest::Url::parse(&address).map_err(|_| "Enter a valid HTTPS Worker URL.")?;
-        if url.scheme() != "https" || url.host_str().is_none() || !url.username().is_empty()
-            || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
-            return Err("Enter the HTTPS address of your team's Worker.".into());
-        }
-        let credential = chat_token.filter(|t| t.starts_with("github_pat_"))
-            .ok_or("Enter a fine-grained GitHub token for this repository.")?;
-        let account = state.session.lock().unwrap().credentials.as_ref()
-            .map(|s| s.account.id).ok_or("Sign in to GitHub first.")?;
-        let owner: Account = checked(http.get(format!("{API}/user")).bearer_auth(&credential)
-            .send().await.map_err(connection_error)?)?.json().await.map_err(connection_error)?;
-        if owner.id != account {
-            return Err("Use a chat token from your signed-in GitHub account.".into());
-        }
-        (url.to_string(), credential)
-    } else {
-        let address = option_env!("TENKIVO_CHAT_AUTH_URL").filter(|url| url.starts_with("https://"))
-            .ok_or("Set up online chat to connect this project.")?;
-        (address.to_owned(), token(&state).await?)
-    };
-    let response = http.post(url).bearer_auth(credential)
+    let response = client()?.post(endpoint).bearer_auth(token(&state).await?)
         .json(&serde_json::json!({"repo":repo})).send().await.map_err(connection_error)?;
     if !response.status().is_success() {
-        return Err(format!("Chat authorization failed (HTTP {}). Check your Worker and repository access.", response.status()));
+        return Err(format!("Chat authorization failed (HTTP {}).", response.status()));
     }
-    response.json().await.map_err(|_| "The endpoint did not return a Tenkivo chat session.".into())
+    response.json().await.map_err(connection_error)
 }

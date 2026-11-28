@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ChatSetup from './ChatSetup.svelte';
   import {onMount,tick} from 'svelte';
   import {initializeApp,deleteApp} from 'firebase/app';
   import {initializeAuth,inMemoryPersistence,signInWithCustomToken} from 'firebase/auth';
@@ -7,39 +6,24 @@
   import {invoke,recordError} from './diagnostics.svelte';
   import type {Project,ProjectUser,ChatMessage} from './model';
   let {project,repo,user,change}:{project:Project;repo?:string;user?:ProjectUser;change:()=>void}=$props();
-  let dialog:HTMLDialogElement, list=$state<HTMLDivElement>();
+  let dialog:HTMLDialogElement, list:HTMLDivElement;
   let draft=$state(''),reply=$state<ChatMessage>(),error=$state(''),sending=$state(false),limit=$state(50);
-  let remote=$state<ChatMessage[]>([]),members=$state<string[]>([]),retry=$state(0);
+  let remote=$state<ChatMessage[]>([]),members=$state<string[]>([]),opened=$state(false),retry=$state(0);
   let messages=$derived(repo?remote:(project.chat??[]).slice(-limit));
   let room=$state.raw<DatabaseReference>(), session=crypto.randomUUID();
   const emoji=['👍','❤️','🎉','👀'];
   function fail(e:unknown){error=String(e);recordError('Project chat',e);}
-  export function show(){dialog.showModal();void bottom();}
+  export function show(){dialog.showModal();opened=true;void bottom();}
   async function bottom(){await tick();if(list)list.scrollTop=list.scrollHeight;}
-  let configured=$state(false),loaded=$state(false),setup=$state(false);
-  let endpoint=$state(''),credential=$state(''),credentialOwner=$state('');
-  const ready=$derived(endpoint?!!credential && credentialOwner===user?.id:configured);
-  function connect(url:string,token:string){
-    endpoint=url;credential=token;credentialOwner=user?.id??'';
-    localStorage.setItem('tenkivo-chat-service:'+repo?.toLowerCase(),url);
-    setup=false;error='';retry++;
-  }
-  function reset(){
-    localStorage.removeItem('tenkivo-chat-service:'+repo?.toLowerCase());
-    endpoint='';credential='';setup=false;error='';
-  }
-  onMount(()=>{
-    if(!repo)return;
-    endpoint=localStorage.getItem('tenkivo-chat-service:'+repo.toLowerCase())??'';
-    void invoke<boolean>('online_chat_configured').then(value=>configured=value).catch(fail).finally(()=>loaded=true);
-  });
+  let configured=$state(false);
+  onMount(()=>{if(repo)void invoke<boolean>('online_chat_configured').then(value=>configured=value).catch(fail);});
   type Grant={apiKey:string;databaseURL:string;projectId:string;room:string;token:string};
   $effect(()=>{
     const repository=repo,identity=user?.id;void retry;
-    if(!repository || !identity || !ready)return;
+    if(!repository || !identity || (!configured && !opened))return;
     let closed=false,cleanup:()=>void=()=>{},timer:ReturnType<typeof setTimeout>;
     async function connect(){
-      const grant=await invoke<Grant>('online_chat_session',{repo:repository,endpoint:endpoint||null,chatToken:endpoint?credential:null});
+      const grant=await invoke<Grant>('online_chat_session',{repo:repository});
       if(closed)return;
       const app=initializeApp({apiKey:grant.apiKey,projectId:grant.projectId,databaseURL:grant.databaseURL},crypto.randomUUID());
       forceWebSockets();
@@ -88,14 +72,11 @@
     }catch(e){fail(e);}
   }
 </script>
-<dialog bind:this={dialog} aria-label="Project chat">
-  <div class="chat-heading"><div><h2>{setup?'Chat setup':'Project chat'}</h2><small>{project.name}</small></div><button aria-label="Close chat" onclick={()=>dialog.close()}>×</button></div>
-  {#if setup && repo}
-    <ChatSetup {repo} {endpoint} {connect} {reset} back={()=>setup=false}/>
-  {:else}
-  {#if repo}<div class="chat-status"><span>{room?'Online: '+members.join(', '):error?'Chat unavailable':loaded && !ready?'Set up chat to connect this project.':'Connecting…'}</span><button onclick={()=>setup=true}>{ready?'Chat setup':'Set up chat'}</button></div>{/if}
+<dialog bind:this={dialog} aria-label="Project chat" onclose={()=>opened=false}>
+  <header><h2>Project chat</h2><button aria-label="Close chat" onclick={()=>dialog.close()}>×</button></header>
+  <small>{project.name}</small>
+  {#if repo}<p>{room?'Online: '+members.join(', '):error?'Chat unavailable':'Connecting…'}</p>{/if}
   {#if error}<p role="alert">{error}</p>{#if repo}<button onclick={()=>{error='';retry++;}}>Retry</button>{/if}{/if}
-  {#if !repo || room}
   <div class="messages" bind:this={list}>
     {#if messages.length===limit}<button onclick={()=>limit+=50}>Earlier messages</button>{/if}
     {#each messages as m (m.id)}
@@ -111,10 +92,8 @@
   {#if !user}<small>{repo?'Sign in to chat.':'Select an editing user to send messages.'}</small>{/if}
   <textarea aria-label="Message" placeholder="Write a message…" maxlength="4000" disabled={!user || sending || (!!repo && !room)} bind:value={draft} onkeydown={e=>{if(e.key==='Enter' && !e.shiftKey && !e.isComposing){e.preventDefault();void send();}}}></textarea>
   <button disabled={!user || !draft.trim() || sending || (!!repo && !room)} onclick={send}>Send</button>
-  {/if}
-  {/if}
 </dialog>
 <style>
-  dialog{width:min(420px,90vw)}.chat-heading,.actions{display:flex;align-items:center;gap:5px}.chat-heading{justify-content:space-between;align-items:flex-start;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--line)}.chat-heading h2{margin:0 0 4px}.chat-status{display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-status button{flex:none}.messages{max-height:45vh;overflow:auto;margin-block:10px}.actions button{padding:2px 6px}.actions [aria-pressed=true]{outline:1px solid var(--accent)}article{border-top:1px solid var(--line);padding:8px 0}article p,blockquote{white-space:pre-wrap;overflow-wrap:anywhere}blockquote{border-left:2px solid var(--accent);margin:5px 0;padding-left:7px}textarea{width:100%}
+  dialog{width:min(420px,90vw)}header,.actions{display:flex;align-items:center;gap:5px}header{justify-content:space-between}header h2{margin:0}.messages{max-height:45vh;overflow:auto;margin-block:10px}.actions button{padding:2px 6px}.actions [aria-pressed=true]{outline:1px solid var(--accent)}article{border-top:1px solid var(--line);padding:8px 0}article p,blockquote{white-space:pre-wrap;overflow-wrap:anywhere}blockquote{border-left:2px solid var(--accent);margin:5px 0;padding-left:7px}textarea{width:100%}
 </style>
 
