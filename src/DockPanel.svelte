@@ -1,11 +1,18 @@
+<script module lang="ts">
+  export type DockId='sidebar'|'inspector'|'search-panel';
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  let {name, panelClass, side=$bindable(), open=$bindable(), children}: {
-    name:string; panelClass:'sidebar'|'inspector'|'search-panel'; side:string; open:boolean; children:Snippet
+  let {name, panelClass, rank, onreorder, side=$bindable(), open=$bindable(), children}: {
+    name:string; panelClass:DockId; rank:number; side:string; open:boolean; children:Snippet;
+    onreorder:(dock:DockId,neighbor:DockId,outer:boolean)=>void;
   } = $props();
   let panel:HTMLElement;
   let target=$state(''), dragging=$state(false);
+  let insertion=$state<{neighbor:DockId;outer:boolean;x:number}>();
+  const distance=$derived((open?10:20)-rank);
   let start:{id:number;x:number;y:number;area:DOMRect}|undefined;
 
   function begin(e:PointerEvent){
@@ -19,14 +26,31 @@
     dragging=true;
     const r=start.area, edge=Math.min(250,r.width*.25);
     target='';
+    insertion=undefined;
     if(e.clientY<r.top || e.clientY>r.bottom || e.clientX<r.left || e.clientX>r.right)return;
+    const neighbor=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('aside[data-dock]');
+    if(neighbor && neighbor.parentElement===panel.parentElement){
+      if(neighbor===panel)return;
+      target=neighbor.dataset.side!;
+      if(open && !neighbor.classList.contains('collapsed')){
+        const rect=neighbor.getBoundingClientRect();
+        const before=e.clientX<(rect.left+rect.right)/2;
+        insertion={neighbor:neighbor.dataset.dock as DockId,outer:before===(target==='left'),x:(before?rect.left:rect.right)-r.left};
+      }
+      return;
+    }
     if(e.clientX<=r.left+edge)target='left';
     if(e.clientX>=r.right-edge)target='right';
   }
-  function cancel(){dragging=false;target='';start=undefined;}
+  function cancel(){dragging=false;target='';start=undefined;insertion=undefined;}
   function finish(e:PointerEvent){
     if(start?.id!==e.pointerId)return;
-    move(e);if(dragging && target)side=target;cancel();
+    move(e);
+    if(dragging && target){
+      side=target;
+      if(insertion)onreorder(panelClass,insertion.neighbor,insertion.outer);
+    }
+    cancel();
   }
   function key(e:KeyboardEvent){
     if(e.key==='Escape'){cancel();e.stopPropagation();return;}
@@ -39,7 +63,7 @@
 
 <svelte:window onpointermove={move} onpointerup={finish} onpointercancel={cancel} onblur={cancel}/>
 <aside bind:this={panel} class={panelClass} class:collapsed={!open} aria-label={name}
-  style:order={side==='left'?(panelClass==='sidebar'?1:2):(panelClass==='sidebar'?4:panelClass==='inspector'?5:6)}>
+  data-dock={panelClass} data-side={side} style:order={side==='left'?-distance:distance}>
   <div class="panel-head">
     <button class="panel-grip" title={'Drag '+name+' to either edge, or use the arrow keys'} aria-label={'Move '+name}
       onpointerdown={begin} onkeydown={key}>
@@ -52,7 +76,9 @@
   </div>
   {#if open}<div class="panel-content">{@render children()}</div>{/if}
 </aside>
-{#if dragging}
+{#if insertion}
+  <div class="dock-insertion" style:left={insertion.x+'px'} aria-hidden="true"></div>
+{:else if dragging}
   {#each ['left','right'] as edge}
     <div class={'dock-target '+edge} class:over={edge===target} aria-hidden="true">Dock {edge}</div>
   {/each}

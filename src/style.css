@@ -35,6 +35,7 @@ header nav{margin-left:0}.settings-button{margin-left:auto}
 .workspace aside.collapsed{width:32px}.collapsed .panel-head{flex-direction:column-reverse;padding:6px 2px;gap:8px;border:0}.collapsed .panel-grip{writing-mode:vertical-rl;letter-spacing:.04em;padding:6px 2px}
 .dock-target{position:absolute;z-index:8;top:0;bottom:0;width:min(25%,250px);pointer-events:none;display:grid;place-items:center;background:color-mix(in srgb,var(--panel) 87%,transparent);border:1px dashed var(--muted);color:var(--ink);font-weight:600}
 .dock-target.left{left:0}.dock-target.right{right:0}.dock-target.over{border:2px solid var(--accent);background:color-mix(in srgb,var(--wash) 93%,transparent)}
+.dock-insertion{position:absolute;inset-block:0;width:3px;transform:translateX(-50%);background:var(--accent);z-index:9;pointer-events:none}
 
 .project-tools button.read-mode{display:inline-flex;align-items:center;gap:6px;border:1px solid #b68a36;background:color-mix(in srgb,#e5aa3d 20%,var(--panel));color:var(--ink);font-weight:650}
 .read-caption{border-inline-start:3px solid #c49137;padding-inline-start:8px;color:var(--ink);font-weight:600}.enable-edit{text-decoration:underline;text-underline-offset:3px}

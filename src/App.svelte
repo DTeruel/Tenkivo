@@ -5,6 +5,7 @@
   import DrawingStroke from './DrawingStroke.svelte';
   import TableEditor from './TableEditor.svelte';
   import DockPanel from './DockPanel.svelte';
+  import type { DockId } from './DockPanel.svelte';
   import {canvasEdges,canvasDropTarget,type CanvasEdge} from './canvasDock';
   import ExportDialog from './ExportDialog.svelte';
   import AttachmentImage from './AttachmentImage.svelte';
@@ -242,6 +243,17 @@
   }
   const snapKeys=['move','resize','rotate'] as const;
   let pagesSide=$state(localStorage.getItem('pages-side')??'left'), inspectorSide=$state(localStorage.getItem('inspector-side')??'right');
+  const defaultDockOrder:DockId[]=['sidebar','search-panel','inspector'];
+  const savedDockOrder=localStorage.getItem('dock-order')?.split(',')??[];
+  let dockOrder=$state.raw<DockId[]>([
+    ...new Set([...savedDockOrder,...defaultDockOrder].filter((id):id is DockId=>defaultDockOrder.includes(id as DockId)))
+  ]);
+  $effect(()=>localStorage.setItem('dock-order',dockOrder.join(',')));
+  function reorderDock(dock:DockId,neighbor:DockId,outer:boolean){
+    const next=dockOrder.filter(id=>id!==dock);
+    next.splice(next.indexOf(neighbor)+(outer?0:1),0,dock);
+    dockOrder=next;
+  }
   let canvasToolbarSide=$state<CanvasEdge>(canvasEdges.find(edge=>edge===localStorage.getItem('canvas-toolbar-side'))??'bottom');
   let canvasArea=$state<HTMLDivElement>(null!);
   let dockDrag=$state<{id:number;x:number;y:number;moving:boolean;target?:CanvasEdge}>();
@@ -2167,7 +2179,7 @@
     <button class="mode-switch" class:edit={editing} class:read-mode={!editing} onclick={toggleEdit} title={editing?'Switch to read mode (E)':'Enable editing (E)'}>{#if !editing}<svg aria-hidden="true" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M6.5 8V6a3.5 3.5 0 0 1 7 0v2"/></svg>{/if}{editing?'Editing · '+(editor?.name??''):'Read mode'}</button>
   </div>
   <div class="workspace">
-  <DockPanel name="Search" panelClass="search-panel" bind:side={searchSide} bind:open={searchOpen}>
+  <DockPanel name="Search" panelClass="search-panel" rank={dockOrder.indexOf('search-panel')} onreorder={reorderDock} bind:side={searchSide} bind:open={searchOpen}>
       <label>Search project<input type="search" placeholder="Pages, objects, notes or cells" bind:this={searchInput} bind:value={searchQuery}
         onkeydown={e=>{if(e.key==='Enter' && searchResults.length && !e.isComposing){e.preventDefault();void follow(searchResults[0].to);}}}/></label>
       <div class="project-search-results">
@@ -2176,7 +2188,7 @@
         {:else}{#if searchQuery.trim()}<small>No matches</small>{/if}{/each}
       </div>
   </DockPanel>
-  <DockPanel name="Pages" panelClass="sidebar" bind:side={pagesSide} bind:open={pagesOpen}>
+  <DockPanel name="Pages" panelClass="sidebar" rank={dockOrder.indexOf('sidebar')} onreorder={reorderDock} bind:side={pagesSide} bind:open={pagesOpen}>
     <div class="project-heading"><h2>{project.name}</h2><button aria-label="Project settings" title="Project settings" onclick={projectOptions}>⚙</button></div>
     <div class="pages-tools"><span class="section">Pages</span><button title="Add root page" aria-label="Add root page" disabled={!editing} onclick={()=>newPage()}>+</button></div>
     <div class="page-scroll">
@@ -2373,7 +2385,7 @@
         {/each}
       </section>
   {/snippet}
-  <DockPanel name="Inspector" panelClass="inspector" bind:side={inspectorSide} bind:open={inspectorOpen}>
+  <DockPanel name="Inspector" panelClass="inspector" rank={dockOrder.indexOf('inspector')} onreorder={reorderDock} bind:side={inspectorSide} bind:open={inspectorOpen}>
     {#if !folderIndex && selectedConnection && arrows.some(a=>a.id===selectedConnection)}<h2>Connection</h2><button disabled={!editing} onclick={deleteConnection}>Delete connection</button>
     {:else if !folderIndex && active}<h2>{active.kind}</h2>
       <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
