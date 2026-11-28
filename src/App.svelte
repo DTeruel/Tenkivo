@@ -2416,6 +2416,7 @@
   </dialog>
   <dialog class="settings" bind:this={settings}>
     {@render closePanel(()=>settings.close())}<h2>Settings</h2>
+    <h3>Startup</h3>
     {#if isTauri()}<label>On startup<select bind:value={startup} onchange={()=>localStorage.setItem('studio-startup',startup)}><option value="welcome">Show welcome screen</option><option value="last">Reopen last project</option></select></label>{/if}
     <label>Open projects in<select value={projectOpeningMode} onchange={event=>setProjectOpeningMode(event.currentTarget.value==='edit'?'edit':'read')}>
       <option value="read">Read mode</option><option value="edit">Edit mode</option>
@@ -2433,6 +2434,7 @@
       if(Number.isInteger(minutes) && minutes>=1 && minutes<=1440)autosaveMinutes=minutes;
       e.currentTarget.value=String(autosaveMinutes);
     }}/></label>
+    <h3>Navigation</h3>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
     <h3>Canvas Snapping</h3><p>Hold Ctrl while dragging. Set a step to zero to disable snapping for that transform.</p>
     <div class="snap-fields">
