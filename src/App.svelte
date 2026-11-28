@@ -1472,8 +1472,11 @@
     const o=item(kind,kind==='Note'?'New note':kind,(width/2-tx)/zoom-110,(height/2-ty)/zoom-60,{inheritDepartment:true,...extra});
     if(kind==='Frame'){
       o.w=480;o.h=300;
-      const previousColor=board.items.find(item=>item.kind==='Frame')?.frameBackground;
-      o.frameBackground=framePalette[(framePalette.indexOf(previousColor??'')+1)%framePalette.length];
+      const frames=board.items.filter(item=>item.kind==='Frame');
+      const usedColors=new Set(frames.map(frame=>frame.frameBackground?.toLowerCase()));
+      const nextUnused=framePalette.find(color=>!usedColors.has(color));
+      const previousColor=frames[0]?.frameBackground?.toLowerCase()??'';
+      o.frameBackground=nextUnused??framePalette[(framePalette.indexOf(previousColor)+1)%framePalette.length];
       board.items.unshift(o);
     }else board.items.push(o);
     ids=[o.id];focusArea='canvas';change();return o;
