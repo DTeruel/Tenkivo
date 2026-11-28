@@ -15,6 +15,8 @@ permissions:
 jobs:
   portable:
     runs-on: windows-2025
+    env:
+      TENKIVO_CHAT_AUTH_URL: ${{ vars.TENKIVO_CHAT_AUTH_URL }}
     defaults:
       run:
         shell: pwsh

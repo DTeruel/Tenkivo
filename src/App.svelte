@@ -3,6 +3,8 @@
   import {connectionPath,portPosition,portSides} from './connections';
   import {collectSelection,preparePaste,remapLinks,type CanvasClipboard} from './canvasClipboard';
   import DrawingStroke from './DrawingStroke.svelte';
+  import ProjectChat from './ProjectChat.svelte';
+  let chat=$state<ProjectChat>();
   import DockPanel from './DockPanel.svelte';
   import {canvasEdges,canvasDropTarget,type CanvasEdge} from './canvasDock';
   import ExportDialog from './ExportDialog.svelte';
@@ -2004,6 +2006,7 @@
         </details>
       {/if}
       <button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
+      <button onclick={()=>chat?.show()}>Project chat</button>
     </nav>
     <div class="app-actions">
       {@render gitHubAccountButton()}
@@ -2182,6 +2185,7 @@
         {/each}
       </section>
   {/snippet}
+  {#key onlineProject?.repo??path}<ProjectChat bind:this={chat} {project} repo={onlineProject?.repo} user={onlineProject?onlineIdentity:editor} {change}/>{/key}
   <DockPanel name="Inspector" panelClass="inspector" bind:side={inspectorSide} bind:open={inspectorOpen}>
     {#if selectedConnection && arrows.some(a=>a.id===selectedConnection)}<h2>Connection</h2><button disabled={!editing} onclick={deleteConnection}>Delete connection</button>
     {:else if active}<h2>{active.kind}</h2>
