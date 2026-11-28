@@ -2051,7 +2051,7 @@
           {@const destination=objectLink(o)}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} ondblclick={e=>activate(o,e)}>
+          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:background={o.kind==='Frame'?o.frameBackground:undefined} ondblclick={e=>activate(o,e)}>
             {#if o.kind==='Image' && o.attachment}<AttachmentImage project={path} attachment={o.attachment} name={o.name}/>{:else if o.kind==='Image'}<img draggable="false" src={o.source} alt={o.name} decoding="async"/>{/if}
             {#if o.drawing}<DrawingStroke drawing={o.drawing}/>{/if}
             {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}
@@ -2164,6 +2164,14 @@
       <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
       <label>Title<input bind:value={active.name} oninput={change}/></label>
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
+      {#if active.kind==='Frame'}
+        {@const frame=active}
+        <div class="frame-background">
+          <label>Background color<input type="color" value={frame.frameBackground??colors[itemTags(frame)[0]]??'#808080'}
+            onchange={e=>{frame.frameBackground=e.currentTarget.value;change();}}/></label>
+          <button disabled={!frame.frameBackground} onclick={()=>{delete frame.frameBackground;change();}}>Reset</button>
+        </div>
+      {/if}
       {@render departmentPicker()}
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}

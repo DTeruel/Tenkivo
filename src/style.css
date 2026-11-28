@@ -229,3 +229,4 @@ dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width
 .inspector-section fieldset,.inspector-file p { margin:0; min-width:0; }
 .thread-preview-title { display:flex; align-items:center; gap:6px; min-width:0; }
 .archived-label { margin-left:auto; flex:none; border:1px solid var(--line); border-radius:4px; padding:1px 4px; font-size:10px; }
+.frame-background { display:flex; align-items:end; flex-wrap:wrap; gap:6px; }

@@ -98,7 +98,7 @@
             {@const color=(project.catalog??defaultCatalog).find(d=>d.id===tags[0])?.color??'#888'}
             {@const src=o.source??(o.attachment?images[JSON.stringify(o.attachment)]:undefined)}
             {@const dest=o.link??(o.target?{pageId:o.target}:undefined)}
-            <div class="pdf-object" class:drawing-object={!!o.drawing} class:frame={o.kind==='Frame'} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:border-color={color} style:transform={'rotate('+(o.rotation??0)+'deg)'}>
+            <div class="pdf-object" class:drawing-object={!!o.drawing} class:frame={o.kind==='Frame'} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:border-color={color} style:background={o.kind==='Frame'?o.frameBackground:undefined} style:transform={'rotate('+(o.rotation??0)+'deg)'}>
               {#if o.kind==='Image' && src}<img src={src} alt={o.name}/>{/if}
               {#if o.drawing}<DrawingStroke drawing={o.drawing}/>
               {:else if o.kind==='Image' && o.showTitle===false}

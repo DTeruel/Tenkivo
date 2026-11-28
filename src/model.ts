@@ -102,6 +102,7 @@ export interface Item {
   parent?: string; source?: string; target?: string; size: number;
   link?: Destination; textLinks?: TextLink[];
   inheritDepartment?:boolean; departments?:Department[]; rotation?: number; autoFit?: boolean;
+  frameBackground?:string;
   showTitle?:boolean; attachment?:Attachment; url?:string;
 }
 function validDestination(value: Destination) {
@@ -240,6 +241,7 @@ export function validProject(value: unknown): value is Project {
       v.items.every(o=>o && ['Note','Image','Frame','Page link','Web link','Attachment','Drawing'].includes(o.kind) && typeof o.id === 'string' &&
         (o.departments===undefined || (Array.isArray(o.departments) && o.departments.every(d=>typeof d==='string'))) &&
         (o.kind!=='Drawing' || validDrawing(o.drawing)) &&
+        (o.frameBackground===undefined || (typeof o.frameBackground==='string' && /^#[a-f0-9]{6}$/i.test(o.frameBackground))) &&
         (o.showTitle===undefined || typeof o.showTitle==='boolean') &&
         (o.attachment===undefined || (o.attachment && typeof o.attachment.path==='string' && typeof o.attachment.local==='boolean' && typeof o.attachment.folder==='boolean' &&
           (o.attachment.shared===undefined || (o.attachment.shared && !o.attachment.folder && o.attachment.local &&
