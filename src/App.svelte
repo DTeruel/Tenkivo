@@ -1600,6 +1600,13 @@
     if(e.key==='Escape'){inline='';ids=[];}
   }
   onMount(()=>{
+    if(isTauri())void invoke<boolean>('should_reset_opening_mode_prompt').then(reset=>{
+      if(reset){
+        openingModePromptShown=false;
+        localStorage.removeItem('studio-hide-opening-mode-prompt');
+        recordActivity('Settings','The opening mode prompt will appear on the next manual switch to edit mode.');
+      }
+    }).catch(()=>{});
     const stopPresence=presence.start();
     let diagnosticsTimer:ReturnType<typeof setInterval>|undefined;
     let collectingDiagnostics=false;

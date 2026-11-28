@@ -11,6 +11,10 @@ fn update_status() -> bool {
     std::env::args().nth(1).as_deref() == Some("--update-failed")
 }
 #[tauri::command]
+fn should_reset_opening_mode_prompt() -> bool {
+    std::env::args_os().nth(1).is_some_and(|arg| arg == "--reset-opening-mode-prompt")
+}
+#[tauri::command]
 fn restart_after_update(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -214,7 +218,8 @@ fn main() {
             updates::check_update,
             updates::install_update,
             restart_after_update,
-            update_status
+            update_status,
+            should_reset_opening_mode_prompt
         ])
         .run(tauri::generate_context!())
         .expect("Could not start Tenkivo");
