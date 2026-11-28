@@ -4,7 +4,6 @@
   import {collectSelection,preparePaste,remapLinks,type CanvasClipboard} from './canvasClipboard';
   import DrawingStroke from './DrawingStroke.svelte';
   import TableEditor from './TableEditor.svelte';
-  import TablePreview from './TablePreview.svelte';
   import DockPanel from './DockPanel.svelte';
   import {canvasEdges,canvasDropTarget,type CanvasEdge} from './canvasDock';
   import ExportDialog from './ExportDialog.svelte';
@@ -1520,7 +1519,6 @@
     const to=objectLink(o);
     if(to && (!editing || o.kind==='Page link'))await follow(to);
     else if(!editing)status=readHint;
-    else if(editing && o.kind==='Table' && o.tableRows){ids=[o.id];ask('Edit table');}
     else if(editing && o.kind==='Note'){inline=o.id;await tick();viewport.querySelector<HTMLElement>('[contenteditable]')?.focus();}
   }
   function frameColorFor(frame:Item){
@@ -1592,8 +1590,7 @@
   function newProject(){section='';
     creationError='';draftUsers=[];draftName='';draftDescription='';draftCatalog=[];selectedTagPreset='';ask('New project');
   }
-  let tableEditSession=$state(0);
-  function ask(type:string){if(type==='Edit table')tableEditSession++;dialogType=type;name='';dialog.showModal();}
+  function ask(type:string){dialogType=type;name='';dialog.showModal();}
   type UnsavedAction='exit'|'close'|'open'|'create'|'reload';
   type UnsavedChoice='save'|'discard'|'cancel';
   const unsavedLabels:Record<UnsavedAction,{action:string;save:string}> = {
@@ -2184,7 +2181,7 @@
               {:else if video}<button onclick={()=>playing=o.id}>▶ Play video</button>{/if}
               <small>↗ {webAddress(o.url)?.hostname}</small>{#if o.body}<div class="body">{o.body}</div>{/if}
             {/if}
-            {#if o.kind==='Table' && o.tableRows}<div class="table-preview"><TablePreview rows={o.tableRows}/></div>{/if}
+            {#if o.kind==='Table' && o.tableRows}<div class="table-preview"><TableEditor rows={o.tableRows} selected={editing && active?.id===o.id} update={rows=>{o.tableRows=rows;change();}}/></div>{/if}
             {#if o.kind==='Note'}
               {#if inline===o.id}
                 <div class="body rich-editor" contenteditable="plaintext-only" role="textbox" aria-multiline="true" aria-label="Edit note" tabindex="0"
@@ -2292,7 +2289,6 @@
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
       {#if active.kind==='Frame'}{@render frameBackgroundPicker(active)}{/if}
       {@render departmentPicker()}
-      {#if active.kind==='Table' && active.tableRows}<button onclick={()=>ask('Edit table')}>Edit table…</button>{/if}
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
         onselect={e=>active && remember(active,e.currentTarget)} oninput={e=>active && updateText(active,e.currentTarget)}></textarea></label>
@@ -2431,12 +2427,12 @@
     </select></label>
     <h3>Autosave</h3>
     <label class="check"><input type="checkbox" bind:checked={autosaveEnabled}/> Automatically save changes</label>
+    <small>Online projects save to GitHub.</small>
     <label>Interval (minutes)<input type="number" min="1" max="1440" step="1" disabled={!autosaveEnabled} value={autosaveMinutes} onchange={e=>{
       const minutes=e.currentTarget.valueAsNumber;
       if(Number.isInteger(minutes) && minutes>=1 && minutes<=1440)autosaveMinutes=minutes;
       e.currentTarget.value=String(autosaveMinutes);
     }}/></label>
-    <small>Online projects save to GitHub.</small>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
     <h3>Canvas Snapping</h3><p>Hold Ctrl while dragging. Set a step to zero to disable snapping for that transform.</p>
     <div class="snap-fields">
@@ -2461,10 +2457,10 @@
       </div>
     {/if}
   </dialog>
-  <dialog bind:this={dialog} class:table-dialog={dialogType==='Edit table'} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
+  <dialog bind:this={dialog} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
-    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations','Edit table'].includes(dialogType)}
+    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
     <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Conversations' && commentItem}
@@ -2507,15 +2503,6 @@
           </footer>
         {/if}
       </section>
-    {:else if dialogType==='Edit table' && editing && active?.tableRows}
-      {@const target=active}
-      {#key tableEditSession}
-      <TableEditor rows={active.tableRows} cancel={()=>dialog.close()} apply={rows=>{
-        target.tableRows=rows;
-        change();
-        dialog.close();
-      }}/>
-      {/key}
     {:else if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
