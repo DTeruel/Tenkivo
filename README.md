@@ -166,7 +166,7 @@ When you save online, Tenkivo removes managed files from the current branch if n
 
 On Windows, double-click **Publish Tenkivo.cmd** from a clean `main` checkout. The publisher uses the existing Git credentials for `origin`. It shows the current version, suggests the next patch version and previews the release notes it generated from commits since the version last changed. After you type `PUBLISH`, it commits the version files and pushes `main` and the annotated version tag together. GitHub Actions builds Windows and macOS and checks both uploaded files before publishing the release. Follow the run under **Actions → Publish Tenkivo**. If the push fails, fix the Git error and run the publisher again to retry the local tag. If the build or upload fails, rerun the failed job in Actions. Wait for the run to finish before starting another release.
 
-On macOS, extract Tenkivo-macOS.zip and drag Tenkivo.app to Applications. The universal app supports Apple silicon and Intel. Builds use ad hoc signing and are not notarized by Apple. macOS may require approval in Privacy & Security. Install updates by replacing the app from the new release.
+On macOS, open Tenkivo-macOS.dmg and drag Tenkivo.app to Applications. The universal app supports Apple silicon and Intel. Builds use ad hoc signing and are not notarized by Apple. macOS may require approval in Privacy & Security. Install updates by replacing the app from the new release.
 
 Write commit subjects in English. A commit can include one or more `Release-Note:` trailers in English to supply user facing wording. The publisher uses these entries when present and the commit subject otherwise.
 

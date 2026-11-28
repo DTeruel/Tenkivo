@@ -20,7 +20,7 @@
 <footer>Tenkivo <a href="https://github.com/DTeruel/Tenkivo">Project repository</a></footer>
 <script>
 fetch('https://api.github.com/repos/DTeruel/Tenkivo/releases/latest').then(r=>r.ok?r.json():null).then(release=>{
-  const mac=release?.assets?.find(a=>a.name==='Tenkivo-macOS.zip');
+  const mac=release?.assets?.find(a=>a.name==='Tenkivo-macOS.dmg');
   if(mac?.browser_download_url.startsWith('https://github.com/DTeruel/Tenkivo/releases/download/')){
     const link=document.createElement('a');
     link.className='button';link.href=mac.browser_download_url;link.textContent='Download for macOS';

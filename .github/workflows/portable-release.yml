@@ -25,29 +25,38 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - name: Build universal macOS application
+      - name: Build universal macOS disk image
         env:
           TENKIVO_GITHUB_CLIENT_ID: ${{ vars.TENKIVO_GITHUB_CLIENT_ID }}
+          APPLE_SIGNING_IDENTITY: '-'
         run: |
           rustup update stable
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
           npm install --global pnpm@11.25.0
           pnpm install --frozen-lockfile
-          pnpm desktop build --target universal-apple-darwin --bundles app
+          pnpm desktop build --target universal-apple-darwin --bundles dmg
           git diff --exit-code -- src-tauri/Cargo.lock
-          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/Tenkivo.app"
+          set -- src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          test "$#" -eq 1
+          test -f "$1"
+          dmg="$RUNNER_TEMP/Tenkivo-macOS.dmg"
+          cp "$1" "$dmg"
+          hdiutil verify "$dmg"
+          mountpoint=$(mktemp -d "$RUNNER_TEMP/tenkivo-dmg.XXXXXX")
+          hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" "$dmg"
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          test "$(readlink "$mountpoint/Applications")" = /Applications
+          app="$mountpoint/Tenkivo.app"
           plist="$app/Contents/Info.plist"
           version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$plist")
           test "v$version" = "$GITHUB_REF_NAME"
           binary=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
           lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/$binary"
-          codesign --force --deep --sign - "$app"
           codesign --verify --strict --deep "$app"
-          ditto -c -k --keepParent --sequesterRsrc "$app" "$RUNNER_TEMP/Tenkivo-macOS.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-universal
-          path: ${{ runner.temp }}/Tenkivo-macOS.zip
+          path: ${{ runner.temp }}/Tenkivo-macOS.dmg
           if-no-files-found: error
 
   portable:
@@ -130,14 +139,14 @@ jobs:
             gh release create $tag --repo $repo --verify-tag --draft --title "Tenkivo $tag" --notes-file "$env:RUNNER_TEMP/tenkivo-release-notes.md"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" "$env:RUNNER_TEMP/Tenkivo-macOS.zip" --repo $repo --clobber
+          gh release upload $tag "$env:RUNNER_TEMP/Tenkivo.exe" "$env:RUNNER_TEMP/Tenkivo-macOS.dmg" --repo $repo --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $releaseId = gh release view $tag --repo $repo --json databaseId --jq '.databaseId'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assetsJson = gh api "repos/$repo/releases/$releaseId/assets"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assets = $assetsJson | ConvertFrom-Json
-          foreach ($name in 'Tenkivo.exe', 'Tenkivo-macOS.zip') {
+          foreach ($name in 'Tenkivo.exe', 'Tenkivo-macOS.dmg') {
             $local = Get-FileHash -LiteralPath "$env:RUNNER_TEMP/$name" -Algorithm SHA256
             $asset = $assets | Where-Object name -CEQ $name
             if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$($local.Hash)") {

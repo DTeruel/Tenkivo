@@ -89,7 +89,7 @@ fn lookup() -> Result<Lookup, String> {
         )));
     }
     #[cfg(target_os = "macos")]
-    let asset = release.assets.iter().find(|a| a.name == "Tenkivo-macOS.zip")
+    let asset = release.assets.iter().find(|a| a.name == "Tenkivo-macOS.dmg")
         .ok_or_else(|| format!("Release {version} has no macOS application."))?;
     #[cfg(not(target_os = "macos"))]
     let asset = release
