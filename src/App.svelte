@@ -1030,6 +1030,21 @@
     for(const {p} of [...rows].reverse())if(matches(pageTags.get(p.id)??[],filters) || keep.has(p.id)){keep.add(p.id);if(p.parentId)keep.add(p.parentId);}
     return rows.filter(({p})=>keep.has(p.id));
   });
+  let collapsedBranches=$state.raw(new Set<string>());
+  const branchesWithChildren=$derived(new Set(pageRows.map(({p})=>p.parentId)));
+  const visiblePageRows=$derived.by(()=>{
+    let collapsedDepth=Infinity;
+    return pageRows.filter(({p,depth})=>{
+      if(depth>collapsedDepth)return false;
+      collapsedDepth=collapsedBranches.has(p.id)?depth:Infinity;
+      return true;
+    });
+  });
+  function toggleBranch(id:string){
+    const next=new Set(collapsedBranches);
+    if(!next.delete(id))next.add(id);
+    collapsedBranches=next;
+  }
   let folderCanvas=$state('');
   const folderIndex=$derived(!!board?.folder && folderCanvas!==current);
   function convertPage(target:Page){
@@ -2165,10 +2180,14 @@
     <div class="project-heading"><h2>{project.name}</h2><button aria-label="Project settings" title="Project settings" onclick={projectOptions}>⚙</button></div>
     <div class="pages-tools"><span class="section">Pages</span><button title="Add root page" aria-label="Add root page" disabled={!editing} onclick={()=>newPage()}>+</button></div>
     <div class="page-scroll">
-    {#each pageRows as {p,depth} (p.id)}
+    {#each visiblePageRows as {p,depth} (p.id)}
       {@const unreadCount=unreadComments(p)+p.items.reduce((count,o)=>count+unreadComments(o),0)}
-      <div class="tree-row" class:ancestor={!matches(pageTags.get(p.id)??[],filters)}>
-      <button class="page" class:chosen={p.id===current} style:padding-left={9+depth*17+'px'} data-drop={treeDrop.startsWith(p.id+' ')?treeDrop.split(' ').at(-1):''}
+      <div class="tree-row" style:padding-left={depth*17+'px'} class:ancestor={!matches(pageTags.get(p.id)??[],filters)}>
+      {#if branchesWithChildren.has(p.id)}
+        {@const expanded=!collapsedBranches.has(p.id)}
+        <button class="page-branch" aria-expanded={expanded} aria-label={(expanded?'Collapse ':'Expand ')+p.name} onclick={()=>toggleBranch(p.id)}><span aria-hidden="true">▸</span></button>
+      {:else}<span class="page-branch" aria-hidden="true"></span>{/if}
+      <button class="page" class:chosen={p.id===current} data-drop={treeDrop.startsWith(p.id+' ')?treeDrop.split(' ').at(-1):''}
         onpointerdown={e=>pageDown(e,p)} draggable={editing && !isTauri()} ondragstart={e=>{draggingPage=p.id;e.dataTransfer?.setData('studio/page',p.id);}}
         ondragend={()=>{treeDrop='';draggingPage='';}} ondragover={e=>{if(editing && draggingPage){e.preventDefault();treeDrop=p.id+' '+placement(e);}}}
         ondrop={e=>movePage(e,p)} oncontextmenu={e=>{focusArea='tree';context(e,p);}} data-page={p.id} onfocus={()=>focusArea='tree'} onclick={()=>{if(suppressPageClick){suppressPageClick=false;return;}focusArea='tree';void navigate(p);}}><span aria-hidden="true">{p.folder?'📁':'▧'}</span><span class="page-name">{p.name}</span></button>
