@@ -93,6 +93,11 @@ export function migrateLegacyDiagrams(project:Project){
   }
 }
 export interface CommentThread {id:string;archived:boolean;messages:{id:string;user:string;author:string;icon?:string;text:string;time:number}[]}
+export function frameHeaderText(color:string){
+  const channels=[1,3,5].map(start=>parseInt(color.slice(start,start+2),16)/255);
+  const [red,green,blue]=channels.map(channel=>channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4);
+  return red*0.2126+green*0.7152+blue*0.0722>0.179?'#000':'#fff';
+}
 export interface Item {
   threads?:CommentThread[];
   styles?: {start:number;end:number;style:NoteStyle}[];

@@ -23,7 +23,7 @@
   }
   import { isTauri } from '@tauri-apps/api/core';
   import { open, save, confirm } from './diagnostics.svelte';
-  import { defaultCatalog, tagPresets, availablePresetTags, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
+  import { frameHeaderText, defaultCatalog, tagPresets, availablePresetTags, addTagPreset, editBody, item, page, snapDefaults, textParts, treeRows, validProject, migrateLegacyDiagrams } from './model';
   import {richNote} from './richNote';
   import {toggleStyle,type NoteStyle} from './model';
   const noteStyles:NoteStyle[]=['bold','italic','underline'];
@@ -1885,6 +1885,14 @@
 {#snippet closePanel(close:()=>void,disabled=false)}
   <button type="button" class="close-panel" title="Close" aria-label="Close" {disabled} onclick={close}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 {/snippet}
+{#snippet frameBackgroundPicker(frame:Item)}
+        <div class="frame-background">
+          <label>Background color<input type="color" disabled={!editing} value={frame.frameBackground??colors[itemTags(frame)[0]]??'#808080'}
+            onchange={e=>{frame.frameBackground=e.currentTarget.value;change();}}/></label>
+          <button disabled={!editing || !frame.frameBackground} onclick={()=>{delete frame.frameBackground;change();}}>Reset</button>
+        </div>
+{/snippet}
+
 {#snippet imageTitle(image:Item)}
   <label class="check image-title"><input type="checkbox" disabled={!editing} checked={image.showTitle!==false}
     onchange={e=>{image.showTitle=e.currentTarget.checked;change();}}/> Show title</label>
@@ -2049,9 +2057,10 @@
       <div class="world" style:transform={'translate('+tx+'px,'+ty+'px) scale('+zoom+')'}>
         {#each visible as o (o.id)}
           {@const destination=objectLink(o)}
+          {@const frameColor=o.kind==='Frame'?(o.frameBackground??colors[itemTags(o)[0]]??'#808080'):undefined}
           {@const media=o.attachment && mediaKind(o.attachment)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:background={o.kind==='Frame'?o.frameBackground:undefined} ondblclick={e=>activate(o,e)}>
+          <div data-id={o.id} class="object" class:drawing-object={o.kind==='Drawing'} class:frame={o.kind==='Frame'} class:selected={ids.includes(o.id)} oncontextmenu={e=>{focusArea='canvas';context(e,undefined,o);}} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:transform={'rotate('+(o.rotation??0)+'deg)'} style:--dept={colors[itemTags(o)[0]]??'var(--line)'} style:--frame-color={frameColor} style:--frame-text={frameColor && frameHeaderText(frameColor)} ondblclick={e=>activate(o,e)}>
             {#if o.kind==='Image' && o.attachment}<AttachmentImage project={path} attachment={o.attachment} name={o.name}/>{:else if o.kind==='Image'}<img draggable="false" src={o.source} alt={o.name} decoding="async"/>{/if}
             {#if o.drawing}<DrawingStroke drawing={o.drawing}/>{/if}
             {#if o.kind!=='Drawing' && (o.kind!=='Image' || o.showTitle!==false)}<div class="caption">{#if editing && titleId===o.id}<input class="note-title" aria-label="Note title" bind:value={titleDraft}
@@ -2164,14 +2173,7 @@
       <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
       <label>Title<input bind:value={active.name} oninput={change}/></label>
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
-      {#if active.kind==='Frame'}
-        {@const frame=active}
-        <div class="frame-background">
-          <label>Background color<input type="color" value={frame.frameBackground??colors[itemTags(frame)[0]]??'#808080'}
-            onchange={e=>{frame.frameBackground=e.currentTarget.value;change();}}/></label>
-          <button disabled={!frame.frameBackground} onclick={()=>{delete frame.frameBackground;change();}}>Reset</button>
-        </div>
-      {/if}
+      {#if active.kind==='Frame'}{@render frameBackgroundPicker(active)}{/if}
       {@render departmentPicker()}
       {#if active.kind==='Note'}<label>Text<textarea value={active.body}
         onbeforeinput={e=>beforeStart=e.currentTarget.selectionStart}
@@ -2234,6 +2236,7 @@
         <hr/>
         <button onclick={()=>{fit();menu=undefined;}}>Focus selection</button>
         {@render departmentPicker()}
+        {#if menu.item?.kind==='Frame'}{@render frameBackgroundPicker(menu.item)}{/if}
         {#if active?.kind==='Image'}{@render imageTitle(active)}{/if}
         {#if active?.attachment || active?.url}<button onclick={()=>{menu=undefined;void openResource(active!);}}>Open</button>{/if}
         {#if picked.length===1}<button disabled={!editing} onclick={()=>{menu=undefined;chooseLink();}}>Link object…</button>{/if}

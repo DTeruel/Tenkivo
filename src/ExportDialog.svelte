@@ -6,7 +6,7 @@
   import {invoke} from './diagnostics.svelte';
   import {isTauri} from '@tauri-apps/api/core';
   import {save} from './diagnostics.svelte';
-  import {defaultCatalog,textParts,webAddress,type Page,type Project,type Destination} from './model';
+  import {frameHeaderText,defaultCatalog,textParts,webAddress,type Page,type Project,type Destination} from './model';
   import {layout,width,height,type Sheet} from './print-layout';
   let {project,path,filters,pageTags,convert,ensureSaved,notify}:{
     project:Project;path:string;filters:string[];pageTags:Map<string,string[]>;convert:(paths:string[])=>Promise<void>;ensureSaved:()=>Promise<boolean>;notify:(message:string,destination?:string)=>void
@@ -95,15 +95,16 @@
           </svg>
           {#each s.items as o}
             {@const tags=o.inheritDepartment?(pageTags.get(s.page?.id??'')??[]):o.departments??[o.department]}
-            {@const color=(project.catalog??defaultCatalog).find(d=>d.id===tags[0])?.color??'#888'}
+            {@const color=(project.catalog??defaultCatalog).find(d=>d.id===tags[0])?.color??'#808080'}
+            {@const frameColor=o.kind==='Frame'?(o.frameBackground??color):undefined}
             {@const src=o.source??(o.attachment?images[JSON.stringify(o.attachment)]:undefined)}
             {@const dest=o.link??(o.target?{pageId:o.target}:undefined)}
-            <div class="pdf-object" class:drawing-object={!!o.drawing} class:frame={o.kind==='Frame'} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:border-color={color} style:background={o.kind==='Frame'?o.frameBackground:undefined} style:transform={'rotate('+(o.rotation??0)+'deg)'}>
+            <div class="pdf-object" class:drawing-object={!!o.drawing} class:frame={o.kind==='Frame'} style:left={o.x+'px'} style:top={o.y+'px'} style:width={o.w+'px'} style:height={o.h+'px'} style:border-color={color} style:--frame-color={frameColor} style:--frame-text={frameColor && frameHeaderText(frameColor)} style:transform={'rotate('+(o.rotation??0)+'deg)'}>
               {#if o.kind==='Image' && src}<img src={src} alt={o.name}/>{/if}
               {#if o.drawing}<DrawingStroke drawing={o.drawing}/>
               {:else if o.kind==='Image' && o.showTitle===false}
                 {#if dest && sheetFor(dest)}<a class="pdf-image-link" href={sheetFor(dest)} aria-label={o.name}></a>{/if}
-              {:else}<strong>{#if dest && sheetFor(dest)}<a href={sheetFor(dest)}>{o.name}</a>{:else if o.url}<a href={o.url}>{o.name}</a>{:else}{o.name}{/if}</strong>{/if}
+              {:else}<strong>{#if frameColor}<span aria-hidden="true">▣ </span>{/if}{#if dest && sheetFor(dest)}<a href={sheetFor(dest)}>{o.name}</a>{:else if o.url}<a href={o.url}>{o.name}</a>{:else}{o.name}{/if}</strong>{/if}
               {#if o.kind==='Note'}<div class="pdf-text" use:fitNote={{active:!!o.autoFit,size:o.size}} style:font-size={o.size+'px'}>{#each textParts(o) as part}<span style={part.css}>{#if part.to && sheetFor(part.to)}<a href={sheetFor(part.to)}>{part.text}</a>{:else}{part.text}{/if}</span>{/each}</div>
               {:else if o.url}<small>{o.url}</small><small>{o.body}</small>
               {:else if o.kind==='Attachment'}<small>{o.attachment?.folder?'Folder':'File'} · {o.attachment?.path.split(/[\\/]/).at(-1)}</small>
