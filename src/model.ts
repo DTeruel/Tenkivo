@@ -184,7 +184,7 @@ export function editBody(o: Item, value: string, selectionStart?: number) {
   });
   o.body = value;
 }
-export interface Page { folder?:boolean; threads?:CommentThread[]; connections?:Connection[]; id: string; name: string; items: Item[]; parentId?:string; departments?:Department[] }
+export interface Page { folder?:boolean; description?:string; threads?:CommentThread[]; connections?:Connection[]; id: string; name: string; items: Item[]; parentId?:string; departments?:Department[] }
 export function treeRows(pages:Page[]) {
   const children=new Map<string|undefined,Page[]>();
   for(const p of pages){
@@ -246,7 +246,7 @@ export function validProject(value: unknown): value is Project {
   if(p.trash!==undefined && (!Array.isArray(p.trash) || !p.trash.every(v=>v && validProject({version:1,name:'',pages:[{...v,parentId:undefined}]}))))return false;
   return p.version === 1 && typeof p.name === 'string' && Array.isArray(p.pages) && p.pages.length > 0 &&
     new Set(p.pages.map(v=>v?.id)).size === p.pages.length &&
-    p.pages.every(v=>v && (v.folder===undefined || typeof v.folder==='boolean') && typeof v.id === 'string' && typeof v.name === 'string' && Array.isArray(v.items) && (v.departments===undefined || (Array.isArray(v.departments) && v.departments.every(d=>typeof d==='string'))) &&
+    p.pages.every(v=>v && (v.folder===undefined || typeof v.folder==='boolean') && (v.description===undefined || typeof v.description==='string') && typeof v.id === 'string' && typeof v.name === 'string' && Array.isArray(v.items) && (v.departments===undefined || (Array.isArray(v.departments) && v.departments.every(d=>typeof d==='string'))) &&
       new Set(v.items.map(o=>o?.id)).size === v.items.length &&
       validThreads(v.threads) &&
       (v.connections===undefined || validConnections(v)) &&

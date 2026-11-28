@@ -2264,8 +2264,15 @@
     <div class="canvas-area" data-toolbar-side={canvasToolbarSide} bind:this={canvasArea}>
     {#if folderIndex}
       <div class="folder-index">
+        {#if board.description?.trim() || editing}
+          <div class="folder-description">
+            {#if editing}
+              <label>Description<textarea bind:value={board.description} oninput={change} placeholder="Describe this folder…" rows="3"></textarea></label>
+            {:else}<p>{board.description}</p>{/if}
+          </div>
+        {/if}
         <section class="folder-section">
-        <div class="folder-section-heading"><h2>Contents</h2>{#if editing}<button onclick={()=>newPage(board)}>Add child page…</button>{/if}</div>
+        <div class="folder-section-heading"><h2>Contents</h2>{#if editing}<button class="folder-action" onclick={()=>newPage(board)}>Add child page…</button>{/if}</div>
         {#each pageRows.filter(row=>row.p.parentId===current) as row (row.p.id)}
           <button class="folder-entry" onclick={()=>navigate(row.p)}><span aria-hidden="true">{row.p.folder?'📁':'▧'}</span> {row.p.name}</button>
         {:else}<p>{project.pages.some(p=>p.parentId===current)?'No children match the current filters.':'This folder is empty.'}</p>{/each}
@@ -2442,7 +2449,9 @@
     {:else}
       <h2>{board.folder?'Folder details':'Page details'}</h2>
       <label>{board.folder?'Folder name':'Page name'}<input disabled={!editing} bind:value={board.name} oninput={change}/></label>
-      {#if !board.folder}
+      {#if board.folder}
+        <label>Description<textarea disabled={!editing} bind:value={board.description} oninput={change} placeholder="Describe this folder…" rows="4"></textarea></label>
+      {:else}
         <div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>
         {@render references()}{@render conversations(board)}
       {/if}
