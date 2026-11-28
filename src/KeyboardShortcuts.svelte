@@ -2,6 +2,7 @@
   const groups:{title:string;shortcuts:{action:string;keys:string[]}[]}[]=[
     {title:'Project and navigation',shortcuts:[
       {action:'Toggle read / edit mode',keys:['E']},
+      {action:'Search project',keys:['Ctrl / Cmd + F']},
       {action:'Save project',keys:['Ctrl / Cmd + S']},
       {action:'Focus selection or page',keys:['F']},
       {action:'Back or forward in history',keys:['Ctrl / Cmd + Shift + ← / →']},

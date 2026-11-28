@@ -234,3 +234,5 @@ dialog.comments-dialog { box-sizing:border-box; width:min(320px,94vw); min-width
 .object.frame .caption { background:var(--frame-color); color:var(--frame-text); padding-block:6px; }
 .app-menu .frame-background { padding:4px 8px; }
 .app-menu .frame-background button { width:auto; }
+.project-search-results { display:grid; gap:4px; max-height:50vh; overflow:auto; width:min(360px,70vw); }
+.reference-result { display:grid; text-align:left; overflow-wrap:anywhere; }

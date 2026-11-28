@@ -1125,6 +1125,35 @@
   function objectLink(o: Item): Destination | undefined {
     return o.link ?? (o.kind==='Page link' && o.target ? {pageId:o.target} : undefined);
   }
+  let searchQuery=$state('');
+  function focusSearch(node:HTMLInputElement){queueMicrotask(()=>node.focus());}
+  function openSearch(){searchQuery='';ask('Search project');}
+  const searchResults=$derived.by(()=>{
+    const query=searchQuery.trim().toLocaleLowerCase();
+    const results:{label:string;detail:string;to:Destination}[]=[];
+    if(!query)return results;
+    for(const p of project.pages){
+      if(p.name.toLocaleLowerCase().includes(query))results.push({label:p.name,detail:'Page',to:{pageId:p.id}});
+      for(const o of p.items){
+        const index=o.kind==='Note'?o.body.toLocaleLowerCase().indexOf(query):-1;
+        if(o.name.toLocaleLowerCase().includes(query) || index>=0){
+          const excerpt=index>=0?' · '+o.body.slice(Math.max(0,index-24),index+query.length+40):'';
+          results.push({label:o.name,detail:p.name+' · '+o.kind+excerpt,to:{pageId:p.id,itemId:o.id}});
+        }
+      }
+    }
+    return results;
+  });
+  const incomingReferences=$derived.by(()=>{
+    const sources:{label:string;to:Destination}[]=[];
+    for(const p of project.pages)for(const o of p.items){
+      const links=[objectLink(o),...(o.textLinks??[]).map(link=>link.to)];
+      if(links.some(to=>to && !to.url && to.pageId===current && to.itemId===active?.id)){
+        sources.push({label:p.name+' / '+o.name,to:{pageId:p.id,itemId:o.id}});
+      }
+    }
+    return sources;
+  });
   function labelFor(to: Destination) {
     if(to.url)return to.url;
     const p=project.pages.find(p=>p.id===to.pageId);
@@ -1703,6 +1732,7 @@
       return;
     }
     const key=e.key.toLowerCase();
+    if(!welcome && (e.ctrlKey || e.metaKey) && key==='f'){e.preventDefault();openSearch();return;}
     if(editing && active?.kind==='Note' && (e.ctrlKey||e.metaKey) && (e.target as HTMLElement).closest('textarea,[contenteditable]') && range?.id===active.id && range.start!==range.end){
       const style=({b:'bold',i:'italic',u:'underline'} as Record<string,NoteStyle>)[key];
       if(style){e.preventDefault();formatNote(style);return;}
@@ -2004,6 +2034,7 @@
         </details>
       {/if}
       <button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
+    <button onclick={openSearch} title="Search project (Ctrl / Cmd + F)">Search</button>
     </nav>
     <div class="app-actions">
       {@render gitHubAccountButton()}
@@ -2170,6 +2201,12 @@
     {/if}
     </div>
   </main>
+  {#snippet references()}
+    <section class="inspector-section"><h3>Referenced by</h3>
+      {#each incomingReferences as source}<button class="reference-result" onclick={()=>follow(source.to)}>{source.label}</button>
+      {:else}<small>No incoming links</small>{/each}
+    </section>
+  {/snippet}
   {#snippet inspectorConversations(subject:Item|Page)}
       <section class="inspector-section inspector-threads">
         <h3>Conversations</h3>
@@ -2202,13 +2239,13 @@
       <div class="dimensions">{#each ['w','h'] as key}<label>{key==='w'?'Width':'Height'}<input type="number" min="40" value={active[key as 'w'|'h']} onchange={e=>{if(active){active[key as 'w'|'h']=Math.max(40,Number(e.currentTarget.value)||40);change();}}}/></label>{/each}</div>
       <button onclick={()=>chooseLink()}>{objectLink(active)?'Edit object link':'Link object'}</button>
     </fieldset></section>
-      {@render inspectorConversations(active)}
+      {@render references()}{@render inspectorConversations(active)}
       {#if active.attachment}<section class="inspector-section inspector-file"><h3>File</h3><p>{active.attachment.shared?'Shared file':active.attachment.local?'Project copy':'Linked original'}<br>{active.attachment.path}</p><div class="attachment-actions">
         <button disabled={!editing || copyingItem===active.id} onclick={()=>relink(active!)}>Relink…</button>
         <button onclick={()=>revealAttachment(active!)}>Open folder</button>
         {#if !active.attachment.local}<button disabled={!editing || !!copyingItem} onclick={()=>copyToProject(active!)}>{copyingItem===active.id?'Copying…':'Copy to project'}</button>{/if}
       </div></section>{/if}
-    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>Page details</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{@render inspectorConversations(board)}{/if}
+    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>Page details</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{@render references()}{@render inspectorConversations(board)}{/if}
   </DockPanel>
   </div>
   {#if menu}
@@ -2352,7 +2389,7 @@
   <dialog bind:this={dialog} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
-    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations'].includes(dialogType)}
+    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations','Search project'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
     <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Conversations' && commentItem}
@@ -2395,6 +2432,10 @@
           </footer>
         {/if}
       </section>
+    {:else if dialogType==='Search project'}
+      <label>Find pages, objects or note text<input type="search" bind:value={searchQuery} use:focusSearch onkeydown={e=>{if(e.key==='Enter' && searchResults.length){dialog.close();void follow(searchResults[0].to);}}}/></label>
+      <div class="project-search-results">{#each searchResults as result}<button class="reference-result" onclick={()=>{dialog.close();void follow(result.to);}}><strong>{result.label}</strong><small>{result.detail}</small></button>
+      {:else}{#if searchQuery.trim()}<small>No matches</small>{/if}{/each}</div>
     {:else if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
