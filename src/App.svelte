@@ -295,7 +295,7 @@
   }
   function setLimit(n:number){historyLimit=normalizeLimit(n);localStorage.setItem('navigation-limit',String(historyLimit));trimHistory();}
   function view(){return {page:current,x:tx,y:ty,zoom,ids:[...ids]};}
-  function resetViews(){modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
+  function resetViews(){searching=false;searchQuery='';modifiedPage='';wire=undefined;selectedConnection='';history=[];cursor=-1;filters=[];ids=[];menu=undefined;projectGeneration++;}
   function rememberView(){if(cursor>=0)history[cursor]=view();}
   function travel(step:number){
     if(historyMenu)historyMenu.open=false;
@@ -1126,8 +1126,14 @@
     return o.link ?? (o.kind==='Page link' && o.target ? {pageId:o.target} : undefined);
   }
   let searchQuery=$state('');
-  function focusSearch(node:HTMLInputElement){queueMicrotask(()=>node.focus());}
-  function openSearch(){searchQuery='';ask('Search project');}
+  let searching=$state(false);
+  let searchInput=$state<HTMLInputElement>();
+  async function openSearch(){
+    searching=true;pagesOpen=true;
+    await tick();
+    searchInput?.focus();
+    searchInput?.select();
+  }
   const searchResults=$derived.by(()=>{
     const query=searchQuery.trim().toLocaleLowerCase();
     const results:{label:string;detail:string;to:Destination}[]=[];
@@ -2019,6 +2025,7 @@
         <hr/>
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
       </div></details>
+      <button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
       {#if onlineProject}
         <details class="file-menu" bind:this={githubMenu} ontoggle={event=>{if(event.currentTarget.open && fileMenu)fileMenu.open=false;}}>
           <summary>GitHub</summary>
@@ -2033,7 +2040,7 @@
           </div>
         </details>
       {/if}
-      <button disabled={!canSaveProject} title={onlineProject && !canSaveProject && !busy?'GitHub write access is required':dirty?'Save unsaved changes':'Save project'} onclick={saveFile}>{dirty?'Save *':'Save'}</button>
+
     <button onclick={openSearch} title="Search project (Ctrl / Cmd + F)">Search</button>
     </nav>
     <div class="app-actions">
@@ -2048,7 +2055,18 @@
     <button class="mode-switch" class:edit={editing} class:read-mode={!editing} onclick={toggleEdit} title={editing?'Switch to read mode (E)':'Enable editing (E)'}>{#if !editing}<svg aria-hidden="true" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M6.5 8V6a3.5 3.5 0 0 1 7 0v2"/></svg>{/if}{editing?'Editing · '+(editor?.name??''):'Read mode'}</button>
   </div>
   <div class="workspace">
-  <DockPanel name="Pages" panelClass="sidebar" bind:side={pagesSide} bind:open={pagesOpen}><div class="project-heading"><h2>{project.name}</h2><button aria-label="Project settings" title="Project settings" onclick={projectOptions}>⚙</button></div>
+  <DockPanel name={searching?'Search':'Pages'} panelClass="sidebar" bind:side={pagesSide} bind:open={pagesOpen}>
+    {#if searching}
+      <button class="search-back" onclick={()=>searching=false}>← Pages</button>
+      <label>Search project<input type="search" placeholder="Pages, objects or note text" bind:this={searchInput} bind:value={searchQuery}
+        onkeydown={e=>{if(e.key==='Enter' && searchResults.length && !e.isComposing){e.preventDefault();void follow(searchResults[0].to);}}}/></label>
+      <div class="project-search-results">
+        {#each searchResults as result}
+          <button class="reference-result" onclick={()=>follow(result.to)}><strong>{result.label}</strong><small>{result.detail}</small></button>
+        {:else}{#if searchQuery.trim()}<small>No matches</small>{/if}{/each}
+      </div>
+    {:else}
+    <div class="project-heading"><h2>{project.name}</h2><button aria-label="Project settings" title="Project settings" onclick={projectOptions}>⚙</button></div>
     <div class="pages-tools"><span class="section">Pages</span><button title="Add root page" aria-label="Add root page" disabled={!editing} onclick={()=>newPage()}>+</button></div>
     <div class="page-scroll">
     {#each pageRows as {p,depth} (p.id)}
@@ -2082,6 +2100,7 @@
         <button class="empty-trash" disabled={!editing} onclick={()=>ask('Empty trash')}>Empty trash…</button>
       {/if}
     </details>
+    {/if}
   </DockPanel>
   <main><div class="boardhead"><div><div class="canvas-label">
     <span class="section">Canvas</span>
@@ -2389,7 +2408,7 @@
   <dialog bind:this={dialog} class:comments-dialog={dialogType==='Conversations'} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
-    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations','Search project'].includes(dialogType)}
+    {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history','Conversations'].includes(dialogType)}
       {@render closePanel(()=>dialog.close())}
     {/if}
     <h2>{dialogType==='Online project'?{create:'New Online Project',open:'Open Online Project',save:'Save as Online'}[onlineMode]:(dialogType==='Project settings' || dialogType==='New project') && section?section:dialogType==='New project'?'New Local Project':dialogType}</h2>{#if dialogType==='Conversations' && commentItem}
@@ -2432,10 +2451,6 @@
           </footer>
         {/if}
       </section>
-    {:else if dialogType==='Search project'}
-      <label>Find pages, objects or note text<input type="search" bind:value={searchQuery} use:focusSearch onkeydown={e=>{if(e.key==='Enter' && searchResults.length){dialog.close();void follow(searchResults[0].to);}}}/></label>
-      <div class="project-search-results">{#each searchResults as result}<button class="reference-result" onclick={()=>{dialog.close();void follow(result.to);}}><strong>{result.label}</strong><small>{result.detail}</small></button>
-      {:else}{#if searchQuery.trim()}<small>No matches</small>{/if}{/each}</div>
     {:else if dialogType==='Internal link' && active}
     <form onsubmit={e=>{e.preventDefault();if(linkType==='web'){const url=webAddress(webTarget);if(url)storeLink({pageId:'',url:url.href});}else storeLink(targetItem?{pageId:targetPage,itemId:targetItem}:{pageId:targetPage});}}>
       <p>{draftRange ? '“'+active.body.slice(draftRange.start,draftRange.end)+'”' : active.name}</p>
