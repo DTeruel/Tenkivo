@@ -58,14 +58,23 @@
   let openingModeDialog:HTMLDialogElement;
   let draftOpeningMode=$state<ProjectOpeningMode>('read');
   let openingModePromptShown=false;
+  let openingModePromptReset=$state(false);
+  let openNextProjectInReadMode=false;
   function setProjectOpeningMode(mode:ProjectOpeningMode){
     projectOpeningMode=mode;
     localStorage.setItem('studio-project-opening-mode',mode);
+  }
+  function resetOpeningModePrompt(){
+    openingModePromptShown=false;
+    openingModePromptReset=true;
+    localStorage.removeItem('studio-hide-opening-mode-prompt');
+    recordActivity('Settings','The opening mode prompt will appear on the next manual switch to edit mode.');
   }
   function requestEditing(){
     const canChooseOpeningMode=!onlineProject || (onlineIdentity && onlineProject.writable);
     if(canChooseOpeningMode && !openingModePromptShown && localStorage.getItem('studio-hide-opening-mode-prompt')!=='true'){
       openingModePromptShown=true;
+      openingModePromptReset=false;
       draftOpeningMode=projectOpeningMode;
       openingModeDialog.showModal();
       return;
@@ -1478,7 +1487,8 @@
     if(!validProject(data))throw Error('Unsupported or invalid project.');
     if(remote)checkOnlineAttachments(data);
     project=data;path=location;onlineProject=remote;welcome=false;rememberProject(location);dirty=false;editorId='';editing=false;resetViews();await navigate(project.pages[0]);resetEdits(true);status='Project opened';
-    openingEditPending=projectOpeningMode==='edit';
+    openingEditPending=projectOpeningMode==='edit' && !openNextProjectInReadMode;
+    openNextProjectInReadMode=false;
     applyProjectOpeningMode();
     return true;
   }
@@ -1600,13 +1610,11 @@
     if(e.key==='Escape'){inline='';ids=[];}
   }
   onMount(()=>{
-    if(isTauri())void invoke<boolean>('should_reset_opening_mode_prompt').then(reset=>{
-      if(reset){
-        openingModePromptShown=false;
-        localStorage.removeItem('studio-hide-opening-mode-prompt');
-        recordActivity('Settings','The opening mode prompt will appear on the next manual switch to edit mode.');
-      }
-    }).catch(()=>{});
+    const openingModeStartup=isTauri()?invoke<boolean>('should_reset_opening_mode_prompt').then(reset=>{
+      if(!reset)return;
+      resetOpeningModePrompt();
+      openNextProjectInReadMode=true;
+    }).catch(()=>{}):undefined;
     const stopPresence=presence.start();
     let diagnosticsTimer:ReturnType<typeof setInterval>|undefined;
     let collectingDiagnostics=false;
@@ -1641,7 +1649,7 @@
       }else void checkUpdates();
     }).catch(()=>{void checkUpdates();});
     const last=localStorage.getItem('studio-last');
-    if(isTauri())void invoke<string|null>('startup_project').then(file=>{if(file)void openRecent(file);else if(startup==='last' && last)void openRecent(last);else void checkRecent();}).catch(()=>void checkRecent());
+    if(openingModeStartup)void openingModeStartup.then(()=>invoke<string|null>('startup_project')).then(file=>{if(file)void openRecent(file);else if(startup==='last' && last)void openRecent(last);else void checkRecent();}).catch(()=>void checkRecent());
     else void checkRecent();
     const before=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue='';}};
     const refresh=()=>{if(welcome)void checkRecent();};
@@ -1810,7 +1818,7 @@
     </main>
   {:else}
   <header>
-    <nav><details class="file-menu" bind:this={fileMenu} ontoggle={()=>{if(fileMenu.open && githubMenu)githubMenu.open=false;}}>
+    <nav><details class="file-menu" bind:this={fileMenu} ontoggle={event=>{if(event.currentTarget.open && githubMenu)githubMenu.open=false;}}>
       <summary>File</summary><div class="file-list">
         <button disabled={busy} onclick={()=>{fileMenu.open=false;newProject();}}>New Local Project…</button>
         {#if isTauri()}<button disabled={busy || restoringAccount} onclick={()=>{fileMenu.open=false;showOnline('create');}}>New Online Project…</button>{/if}
@@ -1830,7 +1838,7 @@
         <button disabled={busy} onclick={()=>{fileMenu.open=false;void closeProject();}}>Close Project</button>
       </div></details>
       {#if onlineProject}
-        <details class="file-menu" bind:this={githubMenu} ontoggle={()=>{if(githubMenu?.open)fileMenu.open=false;}}>
+        <details class="file-menu" bind:this={githubMenu} ontoggle={event=>{if(event.currentTarget.open && fileMenu)fileMenu.open=false;}}>
           <summary>GitHub</summary>
           <div class="file-list">
             <button disabled={busy || restoringAccount} onclick={()=>{if(githubMenu)githubMenu.open=false;refreshOnlineProject();}}>Refresh Project</button>
@@ -2117,6 +2125,7 @@
     <label>Open projects in<select value={projectOpeningMode} onchange={event=>setProjectOpeningMode(event.currentTarget.value==='edit'?'edit':'read')}>
       <option value="read">Read mode</option><option value="edit">Edit mode</option>
     </select></label>
+    <button disabled={openingModePromptReset} onclick={resetOpeningModePrompt}>{openingModePromptReset?'Opening mode prompt enabled':'Show opening mode prompt again'}</button>
     <h3>Appearance</h3>
     <label>Theme<select aria-label="Appearance" bind:value={theme} onchange={()=>localStorage.setItem('studio-theme',theme)}><option>System</option><option>Light</option><option>Dark</option></select></label>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
