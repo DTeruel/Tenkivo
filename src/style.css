@@ -71,7 +71,7 @@ header nav {display:flex;align-items:center;gap:4px}
 .canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) {flex-direction:row}
 .canvas-area:is([data-toolbar-side=top],[data-toolbar-side=left]) .canvas-toolbar {order:-1}
 .canvas-toolbar {position:relative;z-index:8;flex:none;gap:3px;padding-inline-start:5px;background:var(--panel)}
-.canvas-toolbar-grip {flex:none;width:16px;height:26px;padding:0;justify-content:center}
+.canvas-toolbar-grip {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:16px;height:26px;padding:0;justify-content:center}
 .canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) .canvas-toolbar {flex-direction:column;min-width:46px;padding:6px 3px}
 .canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) .navigation-tools {flex-direction:column}
 .canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) .canvas-toolbar .divider {height:0;width:24px;border-left:0;border-top:1px solid var(--line)}
