@@ -10,7 +10,7 @@
   },
   "app": {
     "windows": [{"create":false,"title":"Tenkivo","width":1400,"height":880,"minWidth":880,"minHeight":580,"dragDropEnabled":true,"backgroundColor":"#161616"}],
-    "security": {"assetProtocol":{"enable":true,"scope":[]},"csp":"default-src 'self'; frame-src https://www.youtube-nocookie.com; img-src 'self' data: blob: https://avatars.githubusercontent.com; media-src asset: http://asset.localhost https://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app ipc: http://ipc.localhost 'self'"}
+    "security": {"assetProtocol":{"enable":true,"scope":[]},"csp":"default-src 'self'; frame-src https://www.youtube-nocookie.com; img-src 'self' data: blob: https://avatars.githubusercontent.com; media-src asset: http://asset.localhost https://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost 'self'"}
   },
   "bundle": {"fileAssociations":[{"ext":["tkv"],"name":"Tenkivo Project","role":"Editor"}],"active":true,"targets":["nsis","app","dmg"],"icon":["icons/icon.png","icons/icon.ico","icons/icon.icns"]}
 }

@@ -661,23 +661,3 @@ pub async fn clear_project_cache(state: State<'_, Online>, repo: String) -> Resu
         .await
         .map_err(|e| e.to_string())?
 }
-#[tauri::command]
-pub fn online_chat_configured() -> bool {
-    option_env!("TENKIVO_CHAT_AUTH_URL").is_some_and(|url| url.starts_with("https://"))
-}
-
-#[tauri::command]
-pub async fn online_chat_session(state: State<'_, Online>, repo: String) -> Result<serde_json::Value, String> {
-    let endpoint = option_env!("TENKIVO_CHAT_AUTH_URL")
-        .ok_or("Online chat has not been configured for this build.")?;
-    if !endpoint.starts_with("https://") {
-        return Err("Chat authorization requires HTTPS.".into());
-    }
-    repository_url(&repo)?;
-    let response = client()?.post(endpoint).bearer_auth(token(&state).await?)
-        .json(&serde_json::json!({"repo":repo})).send().await.map_err(connection_error)?;
-    if !response.status().is_success() {
-        return Err(format!("Chat authorization failed (HTTP {}).", response.status()));
-    }
-    response.json().await.map_err(connection_error)
-}

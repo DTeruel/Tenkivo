@@ -182,8 +182,6 @@ fn main() {
             online::online_sign_in,
             online::online_poll,
             online::online_restore,
-            online::online_chat_session,
-            online::online_chat_configured,
             online::online_sign_out,
             online::online_open,
             online::online_save,

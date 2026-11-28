@@ -1,3 +1,0 @@
-name = "tenkivo-chat-auth"
-main = "worker.mjs"
-compatibility_date = "2026-01-01"

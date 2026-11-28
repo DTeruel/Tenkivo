@@ -207,8 +207,7 @@ export interface PageVersion {
   restoredFrom?:string;
   page:Page;
 }
-export interface ChatMessage {id:string;user:string;author:string;time:number;text:string;reply?:string;reactions?:Record<string,Record<string,boolean>>}
-export interface Project { chat?:ChatMessage[]; pageHistory?:PageVersion[]; users?:ProjectUser[]; version: 1; name: string; pages: Page[]; snap?:Snap; trash?:Page[]; catalog?:DepartmentInfo[]; description?:string }
+export interface Project { pageHistory?:PageVersion[]; users?:ProjectUser[]; version: 1; name: string; pages: Page[]; snap?:Snap; trash?:Page[]; catalog?:DepartmentInfo[]; description?:string }
 export function item(kind: Kind, name: string, x: number, y: number, extra: Partial<Item> = {}): Item {
   return { id: crypto.randomUUID(), kind, name, x, y, w: 230, h: 145, body: '', size: 16, department: 'Design', ...extra };
 }
@@ -229,11 +228,6 @@ function validConnections(page:Page){
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
-  if(p.chat!==undefined && (!Array.isArray(p.chat) || !p.chat.every(m=>m &&
-    typeof m.id==='string' && typeof m.user==='string' && typeof m.author==='string' &&
-    typeof m.text==='string' && Number.isFinite(m.time) && (m.reply===undefined || typeof m.reply==='string') &&
-    (m.reactions===undefined || (m.reactions && typeof m.reactions==='object' &&
-      Object.values(m.reactions).every(v=>v && typeof v==='object' && Object.values(v).every(flag=>flag===true)))))))return false;
   if(p.pageHistory!==undefined && (!Array.isArray(p.pageHistory) || !p.pageHistory.every(v=>
     v && typeof v.id==='string' && (v.date===null || (typeof v.date==='string' && Number.isFinite(Date.parse(v.date)))) &&
     (!v.author || (typeof v.author.name==='string' && typeof v.author.icon==='string')) &&
