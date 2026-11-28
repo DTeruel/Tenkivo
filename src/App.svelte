@@ -58,7 +58,6 @@
   let openingModeDialog:HTMLDialogElement;
   let draftOpeningMode=$state<ProjectOpeningMode>('read');
   let openingModePromptShown=false;
-  let openingModePromptReset=$state(false);
   let openNextProjectInReadMode=false;
   function setProjectOpeningMode(mode:ProjectOpeningMode){
     projectOpeningMode=mode;
@@ -66,7 +65,6 @@
   }
   function resetOpeningModePrompt(){
     openingModePromptShown=false;
-    openingModePromptReset=true;
     localStorage.removeItem('studio-hide-opening-mode-prompt');
     recordActivity('Settings','The opening mode prompt will appear on the next manual switch to edit mode.');
   }
@@ -74,7 +72,6 @@
     const canChooseOpeningMode=!onlineProject || (onlineIdentity && onlineProject.writable);
     if(canChooseOpeningMode && !openingModePromptShown && localStorage.getItem('studio-hide-opening-mode-prompt')!=='true'){
       openingModePromptShown=true;
-      openingModePromptReset=false;
       draftOpeningMode=projectOpeningMode;
       openingModeDialog.showModal();
       return;
@@ -2125,7 +2122,6 @@
     <label>Open projects in<select value={projectOpeningMode} onchange={event=>setProjectOpeningMode(event.currentTarget.value==='edit'?'edit':'read')}>
       <option value="read">Read mode</option><option value="edit">Edit mode</option>
     </select></label>
-    <button disabled={openingModePromptReset} onclick={resetOpeningModePrompt}>{openingModePromptReset?'Opening mode prompt enabled':'Show opening mode prompt again'}</button>
     <h3>Appearance</h3>
     <label>Theme<select aria-label="Appearance" bind:value={theme} onchange={()=>localStorage.setItem('studio-theme',theme)}><option>System</option><option>Light</option><option>Dark</option></select></label>
     <label>Navigation history limit<input type="number" min="1" max="100" value={historyLimit} onchange={e=>{setLimit(e.currentTarget.valueAsNumber);e.currentTarget.value=String(historyLimit);}}/></label>
