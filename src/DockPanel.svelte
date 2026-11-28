@@ -10,6 +10,32 @@
     onreorder:(dock:DockId,neighbor:DockId,outer:boolean)=>void;
   } = $props();
   let panel:HTMLElement;
+  const minWidth=170, maxWidth=640;
+  const widthKey='studio-pages-width';
+  let preferredWidth=$state(Number(localStorage.getItem(widthKey)) || 0);
+  let resizeStart:{x:number;width:number}|undefined;
+
+  function setWidth(width:number){
+    const limit=Math.min(maxWidth,Math.max(minWidth,Math.floor(panel.parentElement!.clientWidth*.55)));
+    preferredWidth=Math.max(minWidth,Math.min(limit,Math.round(width)));
+    localStorage.setItem(widthKey,String(preferredWidth));
+  }
+  function beginResize(event:PointerEvent){
+    if(event.button!==0 || !event.isPrimary)return;
+    resizeStart={x:event.clientX,width:panel.getBoundingClientRect().width};
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+  function resizePanel(event:PointerEvent){
+    if(!resizeStart)return;
+    setWidth(resizeStart.width+(event.clientX-resizeStart.x)*(side==='left'?1:-1));
+  }
+  function resizeWithKeys(event:KeyboardEvent){
+    if(event.key!=='ArrowLeft' && event.key!=='ArrowRight')return;
+    event.preventDefault();
+    event.stopPropagation();
+    const direction=(event.key==='ArrowRight')===(side==='left')?1:-1;
+    setWidth(panel.getBoundingClientRect().width+direction*16);
+  }
   let target=$state(''), dragging=$state(false);
   let insertion=$state<{neighbor:DockId;outer:boolean;x:number}>();
   const distance=$derived((open?10:20)-rank);
@@ -63,7 +89,8 @@
 
 <svelte:window onpointermove={move} onpointerup={finish} onpointercancel={cancel} onblur={cancel}/>
 <aside bind:this={panel} class={panelClass} class:collapsed={!open} aria-label={name}
-  data-dock={panelClass} data-side={side} style:order={side==='left'?-distance:distance}>
+  data-dock={panelClass} data-side={side} style:order={side==='left'?-distance:distance}
+  style:width={panelClass==='sidebar' && open && preferredWidth? `clamp(${minWidth}px, ${preferredWidth}px, 55%)`:undefined}>
   <div class="panel-head">
     <button class="panel-grip" title={'Drag '+name+' to either edge, or use the arrow keys'} aria-label={'Move '+name}
       onpointerdown={begin} onkeydown={key}>
@@ -75,6 +102,11 @@
     </button>
   </div>
   {#if open}<div class="panel-content">{@render children()}</div>{/if}
+  {#if open && panelClass==='sidebar'}
+    <button class="panel-resize" aria-label="Resize Pages" title="Drag to resize Pages, or use the arrow keys"
+      onpointerdown={beginResize} onpointermove={resizePanel}
+      onlostpointercapture={()=>resizeStart=undefined} onkeydown={resizeWithKeys}></button>
+  {/if}
 </aside>
 {#if insertion}
   <div class="dock-insertion" style:left={insertion.x+'px'} aria-hidden="true"></div>
