@@ -1172,7 +1172,7 @@
     const sources:{label:string;to:Destination}[]=[];
     for(const p of project.pages)for(const o of p.items){
       const links=[objectLink(o),...(o.textLinks??[]).map(link=>link.to)];
-      if(links.some(to=>to && !to.url && to.pageId===current && to.itemId===active?.id)){
+      if(links.some(to=>to && !to.url && to.pageId===current && to.itemId===(folderIndex?undefined:active?.id))){
         sources.push({label:p.name+' / '+o.name,to:{pageId:p.id,itemId:o.id}});
       }
     }
@@ -2182,12 +2182,16 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="canvas-area" data-toolbar-side={canvasToolbarSide} bind:this={canvasArea}>
     {#if folderIndex}
-      <section class="folder-index" aria-label="Folder contents">
-        <div><h2>Contents</h2>{#if editing}<button onclick={()=>newPage(board)}>Add child page…</button>{/if}</div>
+      <div class="folder-index">
+        <section class="folder-section">
+        <div class="folder-section-heading"><h2>Contents</h2>{#if editing}<button onclick={()=>newPage(board)}>Add child page…</button>{/if}</div>
         {#each pageRows.filter(row=>row.p.parentId===current) as row (row.p.id)}
           <button class="folder-entry" onclick={()=>navigate(row.p)}><span aria-hidden="true">{row.p.folder?'📁':'▧'}</span> {row.p.name}</button>
         {:else}<p>{project.pages.some(p=>p.parentId===current)?'No children match the current filters.':'This folder is empty.'}</p>{/each}
-      </section>
+        </section>
+        {@render references(true)}
+        {@render conversations(board,true)}
+      </div>
     {:else}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="viewport" class:drawing-mode={drawingMode} bind:this={viewport} bind:clientWidth={width} bind:clientHeight={height} oncontextmenu={e=>canvasMenu(e)} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>{wire=undefined;stroke=undefined;drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;commit();}} ondragover={e=>e.preventDefault()} ondrop={drop}>
@@ -2305,27 +2309,30 @@
     {/if}
     </div>
   </main>
-  {#snippet references()}
-    <section class="inspector-section"><h3>Referenced by</h3>
+  {#snippet references(inFolder=false)}
+    <section class={inFolder?'folder-section':'inspector-section'}>
+      {#if inFolder}<h2>Referenced by</h2>{:else}<h3>Referenced by</h3>{/if}
       {#each incomingReferences as source}<button class="reference-result" onclick={()=>follow(source.to)}>{source.label}</button>
       {:else}<small>No incoming links</small>{/each}
     </section>
   {/snippet}
-  {#snippet inspectorConversations(subject:Item|Page)}
-      <section class="inspector-section inspector-threads">
-        <h3>Conversations</h3>
-        <button class="new-comment-thread" aria-label="New comment thread" disabled={!editing || !editor} onclick={()=>showComments(subject,null)}>New</button>
+  {#snippet conversations(subject:Item|Page,inFolder=false)}
+      <section class={inFolder?'folder-section':'inspector-section inspector-threads'}>
+        <div class:folder-section-heading={inFolder}>
+          {#if inFolder}<h2>Conversations</h2>{:else}<h3>Conversations</h3>{/if}
+          <button class="new-comment-thread" aria-label="New comment thread" disabled={!editing || !editor} onclick={()=>showComments(subject,null)}>New</button>
+        </div>
         {#each subject.threads??[] as t (t.id)}
             {@const last=t.messages[t.messages.length-1]}
-            <button onclick={()=>showComments(subject,t)}>
+            <button class="thread-entry" onclick={()=>showComments(subject,t)}>
               <span class="thread-preview-title"><strong>{t.messages[0].text}</strong>{#if t.archived}<span class="archived-label">Archived</span>{/if}</span><small>{unread(t)?'Unread · ':''}{last.author} · {last.text}</small>
             </button>
         {/each}
       </section>
   {/snippet}
   <DockPanel name="Inspector" panelClass="inspector" bind:side={inspectorSide} bind:open={inspectorOpen}>
-    {#if selectedConnection && arrows.some(a=>a.id===selectedConnection)}<h2>Connection</h2><button disabled={!editing} onclick={deleteConnection}>Delete connection</button>
-    {:else if active}<h2>{active.kind}</h2>
+    {#if !folderIndex && selectedConnection && arrows.some(a=>a.id===selectedConnection)}<h2>Connection</h2><button disabled={!editing} onclick={deleteConnection}>Delete connection</button>
+    {:else if !folderIndex && active}<h2>{active.kind}</h2>
       <section class="inspector-section"><h3>Properties</h3><fieldset disabled={!editing}>
       <label>Title<input bind:value={active.name} oninput={change}/></label>
       {#if active.kind==='Image'}{@render imageTitle(active)}{/if}
@@ -2343,13 +2350,22 @@
       <div class="dimensions">{#each ['w','h'] as key}<label>{key==='w'?'Width':'Height'}<input type="number" min="40" value={active[key as 'w'|'h']} onchange={e=>{if(active){active[key as 'w'|'h']=Math.max(40,Number(e.currentTarget.value)||40);change();}}}/></label>{/each}</div>
       <button onclick={()=>chooseLink()}>{objectLink(active)?'Edit object link':'Link object'}</button>
     </fieldset></section>
-      {@render references()}{@render inspectorConversations(active)}
+      {@render references()}{@render conversations(active)}
       {#if active.attachment}<section class="inspector-section inspector-file"><h3>File</h3><p>{active.attachment.shared?'Shared file':active.attachment.local?'Project copy':'Linked original'}<br>{active.attachment.path}</p><div class="attachment-actions">
         <button disabled={!editing || copyingItem===active.id} onclick={()=>relink(active!)}>Relink…</button>
         <button onclick={()=>revealAttachment(active!)}>Open folder</button>
         {#if !active.attachment.local}<button disabled={!editing || !!copyingItem} onclick={()=>copyToProject(active!)}>{copyingItem===active.id?'Copying…':'Copy to project'}</button>{/if}
       </div></section>{/if}
-    {:else if picked.length>1}<h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>{:else}<h2>{board.folder?'Folder details':'Page details'}</h2><label>Page name<input disabled={!editing} bind:value={board.name} oninput={change}/></label><div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>{@render references()}{@render inspectorConversations(board)}{/if}
+    {:else if !folderIndex && picked.length>1}
+      <h2>{picked.length} objects</h2><p>Move the selection or drag a handle to transform it.</p>
+    {:else}
+      <h2>{board.folder?'Folder details':'Page details'}</h2>
+      <label>{board.folder?'Folder name':'Page name'}<input disabled={!editing} bind:value={board.name} oninput={change}/></label>
+      {#if !board.folder}
+        <div class="stat">Objects <b>{board.items.length}</b></div><p>Select an object to inspect its properties.</p>
+        {@render references()}{@render conversations(board)}
+      {/if}
+    {/if}
   </DockPanel>
   </div>
   {#if menu}
