@@ -4,6 +4,7 @@
   import {collectSelection,preparePaste,remapLinks,type CanvasClipboard} from './canvasClipboard';
   import DrawingStroke from './DrawingStroke.svelte';
   import DockPanel from './DockPanel.svelte';
+  import {canvasEdges,canvasCorners,canvasDropTarget,type CanvasEdge,type CanvasCorner} from './canvasDock';
   import ExportDialog from './ExportDialog.svelte';
   import AttachmentImage from './AttachmentImage.svelte';
   import MediaPlayer from './MediaPlayer.svelte';
@@ -234,9 +235,61 @@
   }
   const snapKeys=['move','resize','rotate'] as const;
   let pagesSide=$state(localStorage.getItem('pages-side')??'left'), inspectorSide=$state(localStorage.getItem('inspector-side')??'right');
+  let canvasToolbarSide=$state<CanvasEdge>(canvasEdges.find(edge=>edge===localStorage.getItem('canvas-toolbar-side'))??'bottom');
+  let canvasAddCorner=$state<CanvasCorner>(canvasCorners.find(corner=>corner===localStorage.getItem('canvas-add-corner'))??'top-left');
+  let canvasArea=$state<HTMLDivElement>(null!);
+  let dockDrag=$state<{kind:'toolbar'|'add';id:number;x:number;y:number;moving:boolean;target?:CanvasEdge|CanvasCorner}>();
+  let suppressAddClick=false;
+  $effect(()=>{
+    localStorage.setItem('canvas-toolbar-side',canvasToolbarSide);
+    localStorage.setItem('canvas-add-corner',canvasAddCorner);
+  });
+  function beginCanvasDock(e:PointerEvent,kind:'toolbar'|'add'){
+    e.stopPropagation();
+    if(e.button!==0 || !e.isPrimary)return;
+    menu=undefined;
+    if(historyMenu)historyMenu.open=false;
+    suppressAddClick=false;
+    dockDrag={kind,id:e.pointerId,x:e.clientX,y:e.clientY,moving:false};
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function moveCanvasDock(e:PointerEvent){
+    if(!dockDrag || e.pointerId!==dockDrag.id)return;
+    e.stopPropagation();
+    if(!dockDrag.moving && Math.hypot(e.clientX-dockDrag.x,e.clientY-dockDrag.y)<5)return;
+    dockDrag.moving=true;
+    dockDrag.target=canvasDropTarget(dockDrag.kind,(dockDrag.kind==='toolbar'?canvasArea:viewport).getBoundingClientRect(),e.clientX,e.clientY);
+  }
+  function finishCanvasDock(e:PointerEvent){
+    if(!dockDrag || e.pointerId!==dockDrag.id)return;
+    moveCanvasDock(e);
+    const {kind,moving,target}=dockDrag;
+    if(moving && kind==='toolbar')canvasToolbarSide=canvasEdges.find(edge=>edge===target)??canvasToolbarSide;
+    if(moving && kind==='add'){
+      suppressAddClick=true;
+      canvasAddCorner=canvasCorners.find(corner=>corner===target)??canvasAddCorner;
+    }
+    dockDrag=undefined;
+  }
+  function cancelCanvasDock(){
+    if(dockDrag?.kind==='add' && dockDrag.moving)suppressAddClick=true;
+    dockDrag=undefined;
+  }
+  function canvasDockKey(e:KeyboardEvent,kind:'toolbar'|'add'){
+    if(e.key==='Escape' && dockDrag){cancelCanvasDock();e.stopPropagation();return;}
+    if(e.altKey || e.ctrlKey || e.metaKey || e.shiftKey)return;
+    const edge=canvasEdges.find(edge=>e.key==='Arrow'+({top:'Up',bottom:'Down',left:'Left',right:'Right'}[edge]));
+    if(!edge)return;
+    e.preventDefault();e.stopPropagation();
+    if(kind==='toolbar')canvasToolbarSide=edge;
+    else{
+      const [vertical,horizontal]=canvasAddCorner.split('-');
+      canvasAddCorner=(edge==='top' || edge==='bottom'?`${edge}-${horizontal}`:`${vertical}-${edge}`) as CanvasCorner;
+    }
+  }
   let pagesOpen=$state(localStorage.getItem('pages-open')!=='false'), inspectorOpen=$state(localStorage.getItem('inspector-open')!=='false');
   $effect(()=>{localStorage.setItem('pages-side',pagesSide);localStorage.setItem('inspector-side',inspectorSide);localStorage.setItem('pages-open',String(pagesOpen));localStorage.setItem('inspector-open',String(inspectorOpen));});
-  let menu=$state<{x:number;y:number;page?:Page;canvas?:boolean;fromAdd?:boolean;point?:{x:number;y:number}}>(), pendingPage=$state<Page>();
+  let menu=$state<{x:number;y:number;page?:Page;canvas?:boolean;fromAdd?:boolean;above?:boolean;alignRight?:boolean;point?:{x:number;y:number}}>(), pendingPage=$state<Page>();
   let focusArea:'tree'|'canvas'='canvas';
   let history=$state<{page:string;x:number;y:number;zoom:number;ids:string[]}[]>([]), cursor=$state(-1);
   let historyLimit=$state(normalizeLimit(Number(localStorage.getItem('navigation-limit')??10)));
@@ -674,9 +727,16 @@
   let insertAt:{x:number;y:number}|undefined,linkPage=$state(''),linkUrl=$state('');
   function canvasMenu(e:MouseEvent,fromButton=false){
     e.preventDefault();e.stopPropagation();focusArea='canvas';
-    const rect=(e.currentTarget as HTMLElement).getBoundingClientRect();
-    menu={canvas:true,fromAdd:fromButton,x:Math.max(0,Math.min(fromButton?rect.left:e.clientX,innerWidth-200)),
-      y:Math.max(0,Math.min(fromButton?rect.bottom+3:e.clientY,innerHeight-308)),point:fromButton?undefined:worldPoint(e)};
+    if(fromButton){
+      if(e.detail && suppressAddClick){suppressAddClick=false;return;}
+      if(!editing){status=readHint;return;}
+      const rect=(e.currentTarget as HTMLElement).getBoundingClientRect();
+      const above=canvasAddCorner.startsWith('bottom'),alignRight=canvasAddCorner.endsWith('right');
+      menu={canvas:true,fromAdd:true,above,alignRight,x:alignRight?innerWidth-rect.right:rect.left,y:above?rect.top-3:rect.bottom+3};
+      return;
+    }
+    menu={canvas:true,x:Math.max(0,Math.min(e.clientX,innerWidth-200)),
+      y:Math.max(0,Math.min(e.clientY,innerHeight-308)),point:worldPoint(e)};
   }
   async function insert(kind:string){
     if(!editing)return;
@@ -1809,7 +1869,7 @@
     </fieldset>
   </details>
 {/snippet}
-<svelte:window oncopy={e=>copyObjects(false,e)} oncut={e=>copyObjects(true,e)} onpaste={paste} onpointermove={e=>pagePointerMove(e)} onpointerup={e=>pagePointerMove(e,true)} onpointercancel={()=>{pagePointer=undefined;draggingPage='';treeDrop='';}} onkeydown={keys} onkeyup={e=>{if(e.key==='Alt')altHeld=false;}} onblur={()=>{altHeld=false;wire=undefined;}} oncontextmenu={e=>e.preventDefault()} onpointerdown={e=>{if(!(e.target as HTMLElement).closest('.app-menu'))menu=undefined;if(historyMenu && !historyMenu.contains(e.target as Node))historyMenu.open=false;if(fileMenu && !fileMenu.contains(e.target as Node))fileMenu.open=false;if(githubMenu && !githubMenu.contains(e.target as Node))githubMenu.open=false;}}/>
+<svelte:window oncopy={e=>copyObjects(false,e)} oncut={e=>copyObjects(true,e)} onpaste={paste} onpointermove={e=>pagePointerMove(e)} onpointerup={e=>pagePointerMove(e,true)} onpointercancel={()=>{pagePointer=undefined;draggingPage='';treeDrop='';}} onkeydown={keys} onkeyup={e=>{if(e.key==='Alt')altHeld=false;}} onblur={()=>{altHeld=false;wire=undefined;cancelCanvasDock();}} oncontextmenu={e=>e.preventDefault()} onpointerdown={e=>{if(!(e.target as HTMLElement).closest('.app-menu'))menu=undefined;if(historyMenu && !historyMenu.contains(e.target as Node))historyMenu.open=false;if(fileMenu && !fileMenu.contains(e.target as Node))fileMenu.open=false;if(githubMenu && !githubMenu.contains(e.target as Node))githubMenu.open=false;}}/>
 <div class="studio" data-theme={theme} class:launcher={welcome}>
   {#if welcome}
     <main class="welcome">
@@ -1938,8 +1998,13 @@
     {#if !editing}<span class="read-caption">Editing is locked</span><button class="enable-edit" onclick={toggleEdit}>Enable editing <kbd>E</kbd></button>{/if}
   </div><h1>{board.name}</h1></div></div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="canvas-area" data-toolbar-side={canvasToolbarSide} bind:this={canvasArea}>
     <div class="viewport" class:drawing-mode={drawingMode} bind:this={viewport} bind:clientWidth={width} bind:clientHeight={height} oncontextmenu={e=>canvasMenu(e)} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>{wire=undefined;stroke=undefined;drag=undefined;gesture=undefined;liveBox=undefined;marquee=undefined;commit();}} ondragover={e=>e.preventDefault()} ondrop={drop}>
-      <button class="canvas-add" aria-label="Add canvas element" title="Add canvas element" disabled={!editing} onpointerdown={e=>e.stopPropagation()} onclick={e=>canvasMenu(e,true)}>
+      <button class="canvas-add" data-corner={canvasAddCorner} aria-label="Add canvas element"
+        title="Add canvas element. Drag or use arrow keys to move this button." aria-disabled={!editing}
+        onpointerdown={e=>beginCanvasDock(e,'add')} onpointermove={moveCanvasDock} onpointerup={finishCanvasDock}
+        onpointercancel={cancelCanvasDock} onlostpointercapture={cancelCanvasDock} onkeydown={e=>canvasDockKey(e,'add')}
+        onclick={e=>canvasMenu(e,true)}>
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10M8 3v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
       {#if drawingMode}
@@ -1950,6 +2015,11 @@
           <button onclick={()=>acceptDrawing(false)}>Done</button>
           <button onclick={stopDrawing}>Cancel <kbd>Esc</kbd></button>
         </div>
+      {/if}
+      {#if dockDrag?.kind==='add' && dockDrag.moving}
+        {#each canvasCorners as corner}
+          <div class="canvas-dock-target" class:over={dockDrag.target===corner} data-corner={corner} aria-hidden="true"></div>
+        {/each}
       {/if}
       <div class="world" style:transform={'translate('+tx+'px,'+ty+'px) scale('+zoom+')'}>
         {#each visible as o (o.id)}
@@ -2016,7 +2086,13 @@
         {/if}
       </div>
     </div>
-    <footer>
+    <footer class="canvas-toolbar" aria-label="Canvas toolbar">
+    <button class="panel-grip canvas-toolbar-grip" aria-label="Move canvas toolbar"
+      title="Drag the toolbar to a canvas edge, or use the arrow keys"
+      onpointerdown={e=>beginCanvasDock(e,'toolbar')} onpointermove={moveCanvasDock} onpointerup={finishCanvasDock}
+      onpointercancel={cancelCanvasDock} onlostpointercapture={cancelCanvasDock} onkeydown={e=>canvasDockKey(e,'toolbar')}>
+      <span class="grip-dots" aria-hidden="true"></span>
+    </button>
     <div class="navigation-tools">
     <button aria-label="Back" title="Back (Ctrl+Shift+Left)" disabled={cursor<=0} onclick={()=>travel(-1)}>←</button>
     <details class="nav-history" bind:this={historyMenu}>
@@ -2030,7 +2106,18 @@
     <span class="divider" aria-hidden="true"></span>
     <button aria-label="Undo" title="Undo (Ctrl/Cmd + Z)" disabled={!editing || revision===0} onclick={()=>restoreEdit(-1)}>↶</button>
     <button aria-label="Redo" title="Redo (Ctrl/Cmd + Shift + Z)" disabled={!editing || revision>=revisionCount-1} onclick={()=>restoreEdit(1)}>↷</button>
-<div class="spacer"></div><button onclick={()=>scale(.8)}>−</button><span>{Math.round(zoom*100)}%</span><button onclick={()=>scale(1.25)}>+</button><button onclick={()=>fit()}>Fit <kbd>F</kbd></button></footer>
+    <div class="spacer"></div>
+    <button aria-label="Zoom out" onclick={()=>scale(.8)}>−</button>
+    <span>{Math.round(zoom*100)}%</span>
+    <button aria-label="Zoom in" onclick={()=>scale(1.25)}>+</button>
+    <button onclick={()=>fit()}>Fit <kbd>F</kbd></button>
+    </footer>
+    {#if dockDrag?.kind==='toolbar' && dockDrag.moving}
+      {#each canvasEdges as edge}
+        <div class="canvas-dock-target" class:over={dockDrag.target===edge} data-edge={edge} aria-hidden="true"></div>
+      {/each}
+    {/if}
+    </div>
   </main>
   <DockPanel name="Inspector" panelClass="inspector" bind:side={inspectorSide} bind:open={inspectorOpen}>
     {#if selectedConnection && arrows.some(a=>a.id===selectedConnection)}<h2>Connection</h2><button disabled={!editing} onclick={deleteConnection}>Delete connection</button>
@@ -2059,7 +2146,10 @@
   </DockPanel>
   </div>
   {#if menu}
-    <div class="app-menu" style:left={menu.x+'px'} style:top={Math.max(0,menu.y)+'px'} style:max-height={'calc(100dvh - '+(Math.max(0,menu.y)+8)+'px)'}>
+    <div class="app-menu"
+      style:left={menu.alignRight?undefined:menu.x+'px'} style:right={menu.alignRight?menu.x+'px':undefined}
+      style:top={menu.above?undefined:Math.max(0,menu.y)+'px'} style:bottom={menu.above?'calc(100dvh - '+menu.y+'px)':undefined}
+      style:max-height={menu.above?Math.max(0,menu.y-8)+'px':'calc(100dvh - '+(Math.max(0,menu.y)+8)+'px)'}>
       {#if menu.page}
         {@const target=menu.page}
         {#if target.id!==current}<button onclick={()=>{void navigate(target);menu=undefined;}}>Open page</button>{/if}

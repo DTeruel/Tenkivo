@@ -66,7 +66,19 @@ header nav {display:flex;align-items:center;gap:4px}
 .pages-tools,.canvas-label,.page-trash summary {display:flex;align-items:center;gap:6px}
 .pages-tools>.section {margin:0 auto 0 0}
 .pages-tools button,.pages-tools summary {padding:3px 5px}
-footer .history-list {top:auto;bottom:calc(100% + 4px)}
+.canvas-area {position:relative;display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+.canvas-area .viewport {min-width:0;min-height:0}
+.canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) {flex-direction:row}
+.canvas-area:is([data-toolbar-side=top],[data-toolbar-side=left]) .canvas-toolbar {order:-1}
+.canvas-toolbar {position:relative;z-index:8;flex:none;gap:3px;background:var(--panel)}
+.canvas-toolbar-grip {padding:6px;justify-content:center}
+.canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) .canvas-toolbar {flex-direction:column;min-width:46px;padding:6px 3px}
+.canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) .navigation-tools {flex-direction:column}
+.canvas-area:is([data-toolbar-side=left],[data-toolbar-side=right]) .canvas-toolbar .divider {height:0;width:24px;border-left:0;border-top:1px solid var(--line)}
+.canvas-area[data-toolbar-side=bottom] .history-list {top:auto;bottom:calc(100% + 4px)}
+.canvas-area[data-toolbar-side=top] .history-list {top:calc(100% + 4px)}
+.canvas-area[data-toolbar-side=left] .history-list {top:0;left:calc(100% + 8px)}
+.canvas-area[data-toolbar-side=right] .history-list {top:0;left:auto;right:calc(100% + 8px)}
 .file-list hr,.app-menu hr {width:100%;height:0;margin:4px 0;border:0;border-top:1px solid var(--line)}
 .page-scroll {min-height:0;overflow:auto;flex:1}
 .tree-row .page-tags {min-width:0;padding:0}
@@ -88,7 +100,22 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .page-editors {display:flex;align-items:center;gap:3px;margin-inline:4px;flex:none}
 .page-editor-avatar {position:relative;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;overflow:hidden;background:var(--paper);color:var(--ink);font-size:10px}
 .page-editor-avatar img {position:absolute;inset:0;border-radius:inherit}
-.canvas-add {position:absolute;z-index:6;left:10px;top:10px;width:32px;height:32px;display:grid;place-items:center;padding:0;background:var(--paper);border:1px solid var(--line);box-shadow:0 2px 6px #0002}
+.canvas-add {position:absolute;z-index:6;width:32px;height:32px;display:grid;place-items:center;padding:0;background:var(--paper);border:1px solid var(--line);box-shadow:0 2px 6px #0002}
+.canvas-add[aria-disabled=true] {opacity:.4;cursor:grab}
+.canvas-add:active,.canvas-toolbar-grip:active {cursor:grabbing}
+.canvas-add[data-corner^=top] {top:10px}
+.canvas-add[data-corner^=bottom] {bottom:10px}
+.canvas-add[data-corner$=left] {left:10px}
+.canvas-add[data-corner$=right] {right:10px}
+.canvas-dock-target {position:absolute;z-index:15;pointer-events:none;border:1px dashed var(--muted);border-radius:7px;background:color-mix(in srgb,var(--panel) 75%,transparent)}
+.canvas-dock-target.over {border-color:var(--accent);background:color-mix(in srgb,var(--wash) 93%,transparent)}
+.canvas-dock-target:is([data-edge=top],[data-edge=bottom]) {left:25%;right:25%;height:min(25%,90px)}
+.canvas-dock-target:is([data-edge=left],[data-edge=right]) {top:25%;bottom:25%;width:min(25%,90px)}
+.canvas-dock-target[data-corner] {width:min(33.33%,90px);height:min(33.33%,90px)}
+.canvas-dock-target[data-edge=top],.canvas-dock-target[data-corner^=top] {top:0}
+.canvas-dock-target[data-edge=bottom],.canvas-dock-target[data-corner^=bottom] {bottom:0}
+.canvas-dock-target[data-edge=left],.canvas-dock-target[data-corner$=left] {left:0}
+.canvas-dock-target[data-edge=right],.canvas-dock-target[data-corner$=right] {right:0}
 .menu-heading {font-size:11px;color:var(--muted);padding:4px 9px}
 .app-menu .menu-export {border-top:1px solid var(--line);border-radius:0}
 .log-list {max-height:65vh;width:min(580px,72vw);overflow:auto}
@@ -161,6 +188,7 @@ footer .history-list {top:auto;bottom:calc(100% + 4px)}
 .drawing-input {position:absolute;inset:0;z-index:5;cursor:crosshair}
 .drawing-preview {position:absolute;top:0;left:0;width:1px;height:1px;z-index:8;pointer-events:none}
 .drawing-toolbar {position:absolute;top:10px;left:50px;z-index:7;display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.canvas-add:not([data-corner=top-left]) ~ .drawing-toolbar {left:10px}
 .drawing-toolbar label {display:flex;align-items:center;margin:0}
 .drawing-toolbar input {width:auto}
 .drawing-toolbar input[type=color] {width:28px;height:25px;padding:2px}
