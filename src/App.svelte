@@ -14,6 +14,7 @@
   import {mediaKind,videoId,webAddress,type Attachment} from './model';
   import {invoke,diagnostics,recordActivity,recordError,collectNativeDiagnostics} from './diagnostics.svelte';
   import GitHubProjectUsers from './GitHubProjectUsers.svelte';
+  import KeyboardShortcuts from './KeyboardShortcuts.svelte';
   import {PagePresence,type PageEditor} from './pagePresence.svelte';
   function showLogs(){
     if(!dialog.open)ask('Editor logs');
@@ -2179,7 +2180,7 @@
       </div>
     {/if}
   </dialog>
-  <dialog bind:this={dialog} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
+  <dialog bind:this={dialog} class:shortcuts-dialog={dialogType==='Keyboard shortcuts'} oncancel={e=>{if(dialogType==='Online project' && onlineWorking)e.preventDefault();}}>
     {#if ['Online project','GitHub account'].includes(dialogType)}
       {@render closePanel(()=>dialog.close(),busy || onlineWorking)}
     {:else if ['Project settings','Keyboard shortcuts','Editor logs','Page history'].includes(dialogType)}
@@ -2353,7 +2354,9 @@
   {:else if dialogType==='Empty trash'}<p>Remove {project.trash?.length} {project.trash?.length===1?'page':'pages'} from this project’s trash?</p>
     <div class="dialog-actions"><button onclick={()=>dialog.close()}>Cancel</button><button onclick={emptyTrash}>Empty trash</button></div>
   {:else if dialogType==='Delete page' && pendingPage}<p>Move “{pendingPage.name}” to the trash? Its child pages will move up one level.</p><div class="dialog-actions"><button onclick={()=>dialog.close()}>Cancel</button><button onclick={deletePage}>Move to trash</button></div>
-  {:else if dialogType==='Keyboard shortcuts'}<p>E　 Toggle read / edit<br>F　 Focus selection or page<br>Ctrl / Cmd + C　 Copy focused page or canvas selection<br>Ctrl / Cmd + X　 Cut canvas selection<br>Ctrl / Cmd + V　 Paste page, canvas selection or link<br>Ctrl / Cmd + Z　 Undo<br>Ctrl / Cmd + Shift + Z or Ctrl + Y　 Redo<br>Ctrl / Cmd + B / I / U　 Format selected note text<br>Ctrl / Cmd + K　 Link selected text or object<br>Ctrl / Cmd + S　 Save project<br>Wheel　 Zoom at pointer<br>Middle-drag　 Pan<br>Left-drag　 Box selection<br>Shift + click　 Extend selection<br>Alt + drag between ports　 Connect canvas objects<br>Enter　 Finish drawing and start another<br>Esc　 Cancel current drawing<br>Shift + corner drag　 Resize proportionally<br>Ctrl + drag　 Snap transform<br>Ctrl + Shift + Left / Right　 Navigation history<br>Delete　 Delete selection or focused page</p>{:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></div></form>{/if}</dialog>
+  {:else if dialogType==='Keyboard shortcuts'}
+    <KeyboardShortcuts/>
+  {:else}<form onsubmit={e=>{e.preventDefault();void named();}}><label>Name<input required bind:value={name}/></label><div class="dialog-actions"><button type="button" onclick={()=>dialog.close()}>Cancel</button><button disabled={!name.trim()}>Create</button></div></form>{/if}</dialog>
   <input hidden bind:this={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onchange={e=>{void importImages([...(e.currentTarget.files??[])],insertAt?.x,insertAt?.y);e.currentTarget.value='';}}/>
   <input hidden bind:this={fileInput} type="file" accept=".tkv,.gdstudio" onchange={async e=>{const f=e.currentTarget.files?.[0];e.currentTarget.value='';if(f)try{if(await confirmUnsaved('open'))await load(await f.text(),'');}catch(err){recordError('Open file',err);status=String(err);if(welcome)welcomeError=status;}}}/>
 </div>
